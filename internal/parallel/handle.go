@@ -57,7 +57,13 @@ func (exec *ParallelBlockExecutor) processExecuteEvent(block *pb.Block) {
 
 	exec.normalTxs = make([]types.Hash, 0)
 	validTxs, invalidReceipts := exec.verifySign(block)
-	receipts := exec.applyTransactions(validTxs)
+
+	// group tx by its vm type and from-to addresses
+	group, err := exec.groupTxs(validTxs)
+	if err != nil {
+		panic(fmt.Sprintf("Group tx: %s", err.Error()))
+	}
+	receipts := exec.applyTransactionGroup(group, len(validTxs))
 	receipts = append(receipts, invalidReceipts...)
 
 	calcMerkleStart := time.Now()
@@ -233,57 +239,73 @@ func (exec *ParallelBlockExecutor) verifySign(block *pb.Block) ([]*pb.Transactio
 	return txs, receipts
 }
 
-func (exec *ParallelBlockExecutor) applyTransactions(txs []*pb.Transaction) []*pb.Receipt {
+func (exec *ParallelBlockExecutor) applyTransactionGroup(group TxGroup, txCount int) []*pb.Receipt {
 	current := time.Now()
-	receipts := make([]*pb.Receipt, 0, len(txs))
+	receipts := make([]*pb.Receipt, 0, txCount)
 
-	for i, tx := range txs {
-		receipt := &pb.Receipt{
-			Version: tx.Version,
-			TxHash:  tx.TransactionHash,
-		}
+	wg := &sync.WaitGroup{}
+	wg.Add(len(group))
 
-		normalTx := true
+	for groupType, txs := range group {
+		go func(txs []*pb.Transaction) {
+			defer wg.Done()
 
-		ret, err := exec.applyTransaction(i, tx)
-		if err != nil {
-			receipt.Status = pb.Receipt_FAILED
-			receipt.Ret = []byte(err.Error())
-		} else {
-			receipt.Status = pb.Receipt_SUCCESS
-			receipt.Ret = ret
-		}
+			// bvm type of tx can be accelerated in validation engine part
+			if groupType == "BVM" {
 
-		events := exec.ledger.Events(tx.TransactionHash.Hex())
-		if len(events) != 0 {
-			receipt.Events = events
-			for _, ev := range events {
-				if ev.Interchain {
-					m := make(map[string]uint64)
-					err := json.Unmarshal(ev.Data, &m)
-					if err != nil {
-						panic(err)
-					}
-
-					for k, v := range m {
-						exec.interchainCounter[k] = append(exec.interchainCounter[k], v)
-					}
-					normalTx = false
-				}
 			}
-		}
+			// TODO: possible concurrent conflict to resolve
+			for i, tx := range txs {
+				receipt := &pb.Receipt{
+					Version: tx.Version,
+					TxHash:  tx.TransactionHash,
+				}
 
-		if normalTx {
-			exec.normalTxs = append(exec.normalTxs, tx.TransactionHash)
-		}
+				normalTx := true
 
-		receipts = append(receipts, receipt)
+				ret, err := exec.applyTransaction(i, tx)
+				if err != nil {
+					receipt.Status = pb.Receipt_FAILED
+					receipt.Ret = []byte(err.Error())
+				} else {
+					receipt.Status = pb.Receipt_SUCCESS
+					receipt.Ret = ret
+				}
+
+				events := exec.ledger.Events(tx.TransactionHash.Hex())
+				if len(events) != 0 {
+					receipt.Events = events
+					for _, ev := range events {
+						if ev.Interchain {
+							m := make(map[string]uint64)
+							err := json.Unmarshal(ev.Data, &m)
+							if err != nil {
+								panic(err)
+							}
+
+							for k, v := range m {
+								exec.interchainCounter[k] = append(exec.interchainCounter[k], v)
+							}
+							normalTx = false
+						}
+					}
+				}
+
+				if normalTx {
+					exec.normalTxs = append(exec.normalTxs, tx.TransactionHash)
+				}
+
+				receipts = append(receipts, receipt)
+			}
+		}(txs)
 	}
+	// waiting for all groups of txs to finish
+	wg.Wait()
 
 	applyTxsDuration.Observe(float64(time.Since(current)) / float64(time.Second))
 	exec.logger.WithFields(logrus.Fields{
 		"time":  time.Since(current),
-		"count": len(txs),
+		"count": txCount,
 	}).Debug("Apply transactions elapsed")
 
 	return receipts
