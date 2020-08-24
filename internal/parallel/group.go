@@ -7,12 +7,6 @@ import (
 )
 
 type Group interface{}
-type GroupType string
-
-const (
-	InterchainTx = "interchain"
-	Normal       = "normal"
-)
 
 func (exec *ParallelBlockExecutor) groupTxs(txs []*pb.Transaction) ([]Group, error) {
 	// TODO: group interchainGroups implementation
@@ -33,64 +27,57 @@ func (exec *ParallelBlockExecutor) applyGroup(g Group) []*pb.Receipt {
 	}
 }
 
-type XVMGroup struct {
-	XvmTxs []*pb.Transaction
-}
-
-type BVMGroup struct {
-	SubGroups []*BVMSubGroup
-}
-
-type BVMSubGroup struct {
-	Type             GroupType
-	normalGroup      []*pb.Transaction
-	interchainGroups []*InterchainGroup
-}
-
-type InterchainGroup struct {
-	Txs []*pb.Transaction
-}
-
 func (exec *ParallelBlockExecutor) executeXVMGroup(xvm *XVMGroup) []*pb.Receipt {
-	return exec.applyTransactions(xvm.XvmTxs)
+	receipts := make([]*pb.Receipt, 0, len(xvm.XvmTxs))
+	for _, tx := range xvm.XvmTxs {
+		receipts = append(receipts, exec.applyVMTx(tx))
+	}
+	return receipts
 }
 
 func (exec *ParallelBlockExecutor) executeBVMGroup(bvm *BVMGroup) []*pb.Receipt {
 	// sequence execution in bvm group
+	receipts := make([]*pb.Receipt, 0)
+
 	for _, sub := range bvm.SubGroups {
-		exec.executeBVMSubGroup(sub)
+		rs := sub.Execute()
+		receipts = append(receipts, rs...)
 	}
-	return nil
+	return receipts
 }
 
-func (exec *ParallelBlockExecutor) executeBVMSubGroup(sub *BVMSubGroup) []*pb.Receipt {
-	if sub.Type == InterchainTx {
-		// parallelizing validation engine part
-		return exec.executeInterchainGroups(sub.interchainGroups)
+// normal-tx group including txs like appchain register and
+// rule register tx, which will be executed in line
+func (normal *SubGroupNormal) Execute() []*pb.Receipt {
+	receipts := make([]*pb.Receipt, 0, len(normal.normalGroup))
+	for _, tx := range normal.normalGroup {
+		receipts = append(receipts, normal.exec.applyVMTx(tx))
 	}
-
-	// normal interchain related txs like appchain register and
-	// rule register will be executed in line
-	return exec.applyTransactions(sub.normalGroup)
+	return receipts
 }
 
-func (exec *ParallelBlockExecutor) executeInterchainGroups(inters []*InterchainGroup) []*pb.Receipt {
+// interchain-tx will have sub groups and can be parallelized
+func (interchain *SubGroupInterchain) Execute() []*pb.Receipt {
 	receipts := make([]*pb.Receipt, 0)
 	wg := &sync.WaitGroup{}
-	wg.Add(len(inters))
+	mux := sync.Mutex{}
+	wg.Add(len(interchain.interchainGroups))
 
 	// iterate thorough interchain txs and parallelizing between interchain groups
-	for _, inter := range inters {
-		go func(inter *InterchainGroup) {
+	for _, inter := range interchain.interchainGroups {
+		go func(inter []*BVMTx) {
 			defer wg.Done()
 
-			receipts = append(receipts, exec.executeInterchainGroup(inter)...)
+			mux.Lock()
+			defer mux.Unlock()
+			receipts = append(receipts, interchain.executeInterchainGroup(inter)...)
 		}(inter)
 	}
 	wg.Wait()
 	return receipts
 }
 
-func (exec *ParallelBlockExecutor) executeInterchainGroup(inters *InterchainGroup) []*pb.Receipt {
+func (interchain *SubGroupInterchain) executeInterchainGroup(txs []*BVMTx) []*pb.Receipt {
+	// parallelizing validation engine part
 	return nil
 }
