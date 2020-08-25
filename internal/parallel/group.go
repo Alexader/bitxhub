@@ -8,8 +8,7 @@ import (
 )
 
 const (
-	handleIBTP  = "HandleIBTP"
-	handleIBTPs = "HandleIBTPs"
+	handleIBTP = "HandleIBTP"
 )
 
 type Group interface{}
@@ -33,24 +32,21 @@ func (exec *ParallelBlockExecutor) classifyXVM(txs []*pb.Transaction) ([]*XVMTx,
 		default:
 			switch tx.Data.VmType {
 			case pb.TransactionData_BVM:
-				if tx.To.Hex() == constant.InterchainContractAddr.String() {
-					// if it is interchain contract, add it to bvmTxs
-					payload := &pb.InvokePayload{}
-					if err := payload.Unmarshal(tx.Data.Payload); err != nil {
-						continue
-					}
-
-					bvm := &BVMTx{
-						tx:      tx,
-						isIBTP:  false,
-						method:  payload.Method,
-						args:    payload.Args,
-						txIndex: i,
-					}
-					bvm.isIBTP = payload.Method == handleIBTP
-
-					bvmTxs = append(bvmTxs, bvm)
+				payload := &pb.InvokePayload{}
+				if err := payload.Unmarshal(tx.Data.Payload); err != nil {
+					continue
 				}
+
+				bvm := &BVMTx{
+					tx:      tx,
+					isIBTP:  false,
+					method:  payload.Method,
+					args:    payload.Args,
+					txIndex: i,
+				}
+				bvm.isIBTP = payload.Method == handleIBTP && tx.To.Hex() == constant.InterchainContractAddr.String()
+
+				bvmTxs = append(bvmTxs, bvm)
 			case pb.TransactionData_XVM:
 				xvmTxs = append(xvmTxs, &XVMTx{
 					tx:      tx,
@@ -99,6 +95,7 @@ func (exec *ParallelBlockExecutor) classifyBVM(bvmTxs []*BVMTx) *BVMGroup {
 				}
 				interchainGroupM[ibtp.To] = append(interchainGroupM[ibtp.To], bvmTx)
 			}
+			continue
 		}
 
 		// for normal tx
