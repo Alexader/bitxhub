@@ -4,14 +4,144 @@ import (
 	"sync"
 
 	"github.com/meshplus/bitxhub-model/pb"
+	"github.com/meshplus/bitxhub/internal/constant"
+)
+
+const (
+	handleIBTP  = "HandleIBTP"
+	handleIBTPs = "HandleIBTPs"
 )
 
 type Group interface{}
 
+func (exec *ParallelBlockExecutor) classifyXVM(txs []*pb.Transaction) ([]*XVMTx, []*BVMTx) {
+	xvmTxs := make([]*XVMTx, 0)
+	bvmTxs := make([]*BVMTx, 0)
+
+	for i, tx := range txs {
+		if tx.Data == nil {
+			//return nil, nil, fmt.Errorf("empty transaction data")
+			continue
+		}
+
+		switch tx.Data.Type {
+		case pb.TransactionData_NORMAL:
+			xvmTxs = append(xvmTxs, &XVMTx{
+				tx:      tx,
+				txIndex: i,
+			})
+		default:
+			switch tx.Data.VmType {
+			case pb.TransactionData_BVM:
+				if tx.To.Hex() == constant.InterchainContractAddr.String() {
+					// if it is interchain contract, add it to bvmTxs
+					payload := &pb.InvokePayload{}
+					if err := payload.Unmarshal(tx.Data.Payload); err != nil {
+						continue
+					}
+
+					bvm := &BVMTx{
+						tx:      tx,
+						isIBTP:  false,
+						method:  payload.Method,
+						args:    payload.Args,
+						txIndex: i,
+					}
+					bvm.isIBTP = payload.Method == handleIBTP
+
+					bvmTxs = append(bvmTxs, bvm)
+				}
+			case pb.TransactionData_XVM:
+				xvmTxs = append(xvmTxs, &XVMTx{
+					tx:      tx,
+					txIndex: i,
+				})
+			}
+		}
+	}
+	return xvmTxs, bvmTxs
+}
+
+func (exec *ParallelBlockExecutor) classifyBVM(bvmTxs []*BVMTx) *BVMGroup {
+	bvmGroup := &BVMGroup{SubGroups: make([]SubGroup, 0)}
+	isPreviousInterchain := false
+	subGroupNormal := &SubGroupNormal{exec: exec}
+	subGroupInterchain := &SubGroupInterchain{exec: exec}
+	normalGroup := make([]*BVMTx, 0)
+	interchainGroupM := make(map[string][]*BVMTx, 0)
+
+	for _, bvmTx := range bvmTxs {
+		if bvmTx.isIBTP {
+			if !isPreviousInterchain {
+				// if previous tx is non-interchain type,
+				// add old subGroupNormal into subGroup of bvm and
+				// create new subGroup for normal txs
+				if len(normalGroup) != 0 {
+					subGroupNormal.normalGroup = normalGroup
+					bvmGroup.SubGroups = append(bvmGroup.SubGroups, subGroupNormal)
+					normalGroup = make([]*BVMTx, 0)
+					subGroupNormal = &SubGroupNormal{exec: exec}
+				}
+			}
+
+			isPreviousInterchain = true
+			// classify interchainTx by its from-to addresses in IBTP struture
+			switch bvmTx.method {
+			case handleIBTP:
+				ibtp := &pb.IBTP{}
+				if err := ibtp.Unmarshal(bvmTx.args[0].Value); err != nil {
+					continue
+				}
+
+				_, ok := interchainGroupM[ibtp.To]
+				if !ok {
+					interchainGroupM[ibtp.To] = make([]*BVMTx, 0, 1)
+				}
+				interchainGroupM[ibtp.To] = append(interchainGroupM[ibtp.To], bvmTx)
+			}
+		}
+
+		// for normal tx
+		if isPreviousInterchain {
+			// if previous tx is interchain type,
+			// add old interchainGroups into subGroupInterchain and
+			// create new subGroup for interchain
+			if len(interchainGroupM) != 0 {
+				subGroupInterchain.genFromMap(interchainGroupM)
+				bvmGroup.SubGroups = append(bvmGroup.SubGroups, subGroupInterchain)
+				subGroupInterchain = &SubGroupInterchain{exec: exec}
+				interchainGroupM = make(map[string][]*BVMTx, 0)
+			}
+		}
+
+		isPreviousInterchain = false
+		normalGroup = append(normalGroup, bvmTx)
+	}
+
+	// add last group into bvmGroup
+	if len(normalGroup) != 0 {
+		subGroupNormal.normalGroup = normalGroup
+		bvmGroup.SubGroups = append(bvmGroup.SubGroups, subGroupNormal)
+	}
+
+	if len(interchainGroupM) != 0 {
+		subGroupInterchain.genFromMap(interchainGroupM)
+		bvmGroup.SubGroups = append(bvmGroup.SubGroups, subGroupInterchain)
+	}
+
+	return bvmGroup
+}
+
 func (exec *ParallelBlockExecutor) groupTxs(txs []*pb.Transaction) ([]Group, error) {
-	// TODO: group interchainGroups implementation
 	xvmGroup := &XVMGroup{}
-	bvmGroup := &BVMGroup{}
+	// first round, group into xvm and bvm
+	xvmTxs, bvmTxs := exec.classifyXVM(txs)
+
+	// add xvm txs into xvmGroup
+	xvmGroup.XvmTxs = xvmTxs
+
+	// second round, group bvm into sub groups
+	bvmGroup := exec.classifyBVM(bvmTxs)
 
 	return []Group{xvmGroup, bvmGroup}, nil
 }

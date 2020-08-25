@@ -24,6 +24,14 @@ type SubGroupInterchain struct {
 	interchainGroups [][]*BVMTx
 }
 
+func (subInterchain *SubGroupInterchain) genFromMap(m map[string][]*BVMTx) {
+	subInterchain.interchainGroups = make([][]*BVMTx, 0, len(m))
+	for _, interchainGroup := range m {
+		subInterchain.interchainGroups =
+			append(subInterchain.interchainGroups, interchainGroup)
+	}
+}
+
 type VMTx interface {
 	GetIndex() int
 	GetTx() *pb.Transaction
@@ -33,7 +41,7 @@ type BVMTx struct {
 	tx      *pb.Transaction
 	txIndex int
 	method  string
-	args    []byte
+	args    []*pb.Arg
 	isIBTP  bool
 }
 
