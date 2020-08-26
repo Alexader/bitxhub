@@ -284,22 +284,15 @@ func (exec *ParallelBlockExecutor) applyTransactionGroups(groups []Group, txCoun
 	return receipts
 }
 
-func (exec *ParallelBlockExecutor) applyVMTx(vmTx VMTx) *pb.Receipt {
+func (exec *ParallelBlockExecutor) applyVMTx(vmTx VMTx, receipt *pb.Receipt) {
 	// TODO: possible concurrent conflict to resolve
-	receipt := &pb.Receipt{
-		Version: vmTx.GetTx().Version,
-		TxHash:  vmTx.GetTx().TransactionHash,
-	}
-
 	normalTx := true
 
 	ret, err := exec.applyTransaction(vmTx.GetIndex(), vmTx.GetTx())
 	if err != nil {
-		receipt.Status = pb.Receipt_FAILED
-		receipt.Ret = []byte(err.Error())
+		receiptFail(receipt, err)
 	} else {
-		receipt.Status = pb.Receipt_SUCCESS
-		receipt.Ret = ret
+		receiptSuccess(receipt, ret)
 	}
 
 	events := exec.ledger.Events(vmTx.GetTx().TransactionHash.Hex())
@@ -324,8 +317,6 @@ func (exec *ParallelBlockExecutor) applyVMTx(vmTx VMTx) *pb.Receipt {
 	if normalTx {
 		exec.normalTxs = append(exec.normalTxs, vmTx.GetTx().TransactionHash)
 	}
-
-	return receipt
 }
 
 func (exec *ParallelBlockExecutor) postBlockEvent(block *pb.Block, interchainMeta *pb.InterchainMeta) {
@@ -425,4 +416,14 @@ func calcMerkleRoot(contents []merkletree.Content) (types.Hash, error) {
 	}
 
 	return types.Bytes2Hash(tree.MerkleRoot()), nil
+}
+
+func receiptFail(r *pb.Receipt, err error) {
+	r.Status = pb.Receipt_FAILED
+	r.Ret = []byte(err.Error())
+}
+
+func receiptSuccess(r *pb.Receipt, ret []byte) {
+	r.Status = pb.Receipt_SUCCESS
+	r.Ret = ret
 }

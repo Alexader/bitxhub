@@ -44,7 +44,7 @@ func TestGroup(t *testing.T) {
 
 	// set tx of TransactionData_BVM type
 	bvmTypes := []constant.BoltContractAddress{constant.AppchainMgrContractAddr, constant.RuleManagerContractAddr}
-	for i := uint64(1); i <= 2; i++ {
+	for i := uint64(0); i < 2; i++ {
 		BVMTx := mockNormalTx(t, bvmTypes[i])
 		BVMTx.TransactionHash = BVMTx.Hash()
 		txs = append(txs, BVMTx)
@@ -174,7 +174,7 @@ func mockNormalTx(t *testing.T, boltAddr constant.BoltContractAddress) *pb.Trans
 func mockInterchainTx(t *testing.T, data *pb.TransactionData) *pb.Transaction {
 	return &pb.Transaction{
 		From:  randAddress(t),
-		To:    types.String2Address(constant.InterchainContractAddr.String()),
+		To:    types.String2Address(constant.ParallelInterchainContractAddr.String()),
 		Data:  data,
 		Nonce: rand.Int63(),
 	}
@@ -204,7 +204,7 @@ func mockAssetExchangeTx(t *testing.T) *pb.Transaction {
 
 	return &pb.Transaction{
 		From:  randAddress(t),
-		To:    types.String2Address(constant.InterchainContractAddr.String()),
+		To:    types.String2Address(constant.ParallelInterchainContractAddr.String()),
 		Data:  data,
 		Nonce: rand.Int63(),
 	}
@@ -227,7 +227,7 @@ func mockXVMTx(t *testing.T) *pb.Transaction {
 
 	return &pb.Transaction{
 		From:  randAddress(t),
-		To:    types.String2Address(constant.InterchainContractAddr.String()),
+		To:    types.String2Address(constant.ParallelInterchainContractAddr.String()),
 		Data:  data,
 		Nonce: rand.Int63(),
 	}

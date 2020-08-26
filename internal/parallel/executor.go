@@ -23,24 +23,26 @@ import (
 const (
 	blockChanNumber   = 1024
 	persistChanNumber = 1024
+	contractPollSize  = 500
 )
 
 var _ executor.Executor = (*ParallelBlockExecutor)(nil)
 
 // ParallelBlockExecutor executes block from order
 type ParallelBlockExecutor struct {
-	ledger            ledger.Ledger
-	logger            logrus.FieldLogger
-	blockC            chan *pb.Block
-	persistC          chan *ledger.BlockData
-	pendingBlockQ     *cache.Cache
-	interchainCounter map[string][]uint64
-	normalTxs         []types.Hash
-	validationEngine  validator.Engine
-	currentHeight     uint64
-	currentBlockHash  types.Hash
-	boltContracts     map[string]boltvm.Contract
-	wasmInstances     map[string]wasmer.Instance
+	ledger                 ledger.Ledger
+	logger                 logrus.FieldLogger
+	blockC                 chan *pb.Block
+	persistC               chan *ledger.BlockData
+	pendingBlockQ          *cache.Cache
+	interchainCounter      map[string][]uint64
+	normalTxs              []types.Hash
+	validationEngine       validator.Engine
+	currentHeight          uint64
+	currentBlockHash       types.Hash
+	boltContracts          map[string]boltvm.Contract
+	interchainContractPool ContractPool
+	wasmInstances          map[string]wasmer.Instance
 
 	blockFeed event.Feed
 
@@ -58,23 +60,25 @@ func New(chainLedger ledger.Ledger, logger logrus.FieldLogger) (*ParallelBlockEx
 	ve := validator.NewValidationEngine(chainLedger, logger)
 
 	boltContracts := registerBoltContracts()
+	interchainContractPool := NewContractPool(contractPollSize)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &ParallelBlockExecutor{
-		ledger:            chainLedger,
-		logger:            logger,
-		interchainCounter: make(map[string][]uint64),
-		ctx:               ctx,
-		cancel:            cancel,
-		blockC:            make(chan *pb.Block, blockChanNumber),
-		persistC:          make(chan *ledger.BlockData, persistChanNumber),
-		pendingBlockQ:     pendingBlockQ,
-		validationEngine:  ve,
-		currentHeight:     chainLedger.GetChainMeta().Height,
-		currentBlockHash:  chainLedger.GetChainMeta().BlockHash,
-		boltContracts:     boltContracts,
-		wasmInstances:     make(map[string]wasmer.Instance),
+		ledger:                 chainLedger,
+		logger:                 logger,
+		interchainCounter:      make(map[string][]uint64),
+		ctx:                    ctx,
+		cancel:                 cancel,
+		blockC:                 make(chan *pb.Block, blockChanNumber),
+		persistC:               make(chan *ledger.BlockData, persistChanNumber),
+		pendingBlockQ:          pendingBlockQ,
+		validationEngine:       ve,
+		currentHeight:          chainLedger.GetChainMeta().Height,
+		currentBlockHash:       chainLedger.GetChainMeta().BlockHash,
+		boltContracts:          boltContracts,
+		interchainContractPool: interchainContractPool,
+		wasmInstances:          make(map[string]wasmer.Instance),
 	}, nil
 }
 
@@ -127,11 +131,9 @@ func (exec *ParallelBlockExecutor) ApplyReadonlyTransactions(txs []*pb.Transacti
 
 		ret, err := exec.applyTransaction(i, tx)
 		if err != nil {
-			receipt.Status = pb.Receipt_FAILED
-			receipt.Ret = []byte(err.Error())
+			receiptFail(receipt, err)
 		} else {
-			receipt.Status = pb.Receipt_SUCCESS
-			receipt.Ret = ret
+			receiptSuccess(receipt, ret)
 		}
 
 		receipts = append(receipts, receipt)
@@ -167,12 +169,6 @@ func (exec *ParallelBlockExecutor) persistData() {
 
 func registerBoltContracts() map[string]boltvm.Contract {
 	boltContracts := []*boltvm.BoltContract{
-		{
-			Enabled:  true,
-			Name:     "interchain manager contract",
-			Address:  constant.InterchainContractAddr.String(),
-			Contract: &contracts.InterchainManager{},
-		},
 		{
 			Enabled:  true,
 			Name:     "store service",
