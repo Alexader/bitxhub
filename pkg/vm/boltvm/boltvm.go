@@ -39,11 +39,10 @@ func (bvm *BoltVM) Run(input []byte) (ret []byte, err error) {
 		return nil, fmt.Errorf("unmarshal invoke payload: %w", err)
 	}
 
-	contract, err := GetBoltContract(bvm.ctx.Callee.Hex(), bvm.contracts)
-	if err != nil {
-		return nil, fmt.Errorf("get bolt contract: %w", err)
-	}
+	contract := bvm.ctx.Contract
 
+	fmt.Printf("contract address is: %s\n", bvm.ctx.Callee.Hex())
+	fmt.Printf("contract structure is: %v\n", contract)
 	rc := reflect.ValueOf(contract)
 	stubField := rc.Elem().Field(0)
 	stub := &BoltStubImpl{

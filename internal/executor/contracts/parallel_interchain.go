@@ -110,20 +110,19 @@ func (x *ParallelInterchainManager) HandleIBTP(data []byte) *boltvm.Response {
 		return boltvm.Error(err.Error())
 	}
 
-	interchain := &ParallelInterchain{}
-	x.GetObject(x.appchainKey(ibtp.From), &interchain)
-
 	if err := x.checkIBTP(ibtp); err != nil {
-		return boltvm.Error(err.Error())
-	}
-
-	if err := x.checkIndex(ibtp, interchain); err != nil {
 		return boltvm.Error(err.Error())
 	}
 
 	res := boltvm.Success(nil)
 	select {
 	case <-x.chCurr:
+		interchain := &ParallelInterchain{}
+		x.GetObject(x.appchainKey(ibtp.From), &interchain)
+		if err := x.checkIndex(ibtp, interchain); err != nil {
+			return boltvm.Error(err.Error())
+		}
+
 		if pb.IBTP_INTERCHAIN == ibtp.Type {
 			res = x.beginTransaction(ibtp)
 		} else if pb.IBTP_RECEIPT_SUCCESS == ibtp.Type || pb.IBTP_RECEIPT_FAILURE == ibtp.Type {

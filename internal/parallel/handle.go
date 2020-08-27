@@ -13,6 +13,7 @@ import (
 	"github.com/meshplus/bitxhub-kit/crypto/asym"
 	"github.com/meshplus/bitxhub-kit/types"
 	"github.com/meshplus/bitxhub-model/pb"
+	"github.com/meshplus/bitxhub/internal/constant"
 	"github.com/meshplus/bitxhub/internal/ledger"
 	"github.com/meshplus/bitxhub/internal/model/events"
 	"github.com/meshplus/bitxhub/pkg/vm"
@@ -23,6 +24,7 @@ import (
 
 func (exec *ParallelBlockExecutor) handleExecuteEvent(block *pb.Block) {
 	if !exec.isDemandNumber(block.BlockHeader.Number) {
+		fmt.Printf("worng block number: %d", block.BlockHeader.Number)
 		exec.addPendingExecuteEvent(block)
 		return
 	}
@@ -58,6 +60,7 @@ func (exec *ParallelBlockExecutor) processExecuteEvent(block *pb.Block) {
 	exec.normalTxs = make([]types.Hash, 0)
 	validTxs, invalidReceipts := exec.verifySign(block)
 
+	exec.logger.Infof("validTxs len %d", len(validTxs))
 	// group tx by its vm type and from-to addresses
 	groups, err := exec.groupTxs(validTxs)
 	if err != nil {
@@ -106,7 +109,7 @@ func (exec *ParallelBlockExecutor) processExecuteEvent(block *pb.Block) {
 		"tx_root":      block.BlockHeader.TxRoot.ShortString(),
 		"receipt_root": block.BlockHeader.ReceiptRoot.ShortString(),
 		"state_root":   block.BlockHeader.StateRoot.ShortString(),
-	}).Debug("block meta")
+	}).Infof("block meta")
 	calcBlockSize.Observe(float64(block.Size()))
 	executeBlockDuration.Observe(float64(time.Since(current)) / float64(time.Second))
 
@@ -285,7 +288,6 @@ func (exec *ParallelBlockExecutor) applyTransactionGroups(groups []Group, txCoun
 }
 
 func (exec *ParallelBlockExecutor) applyVMTx(vmTx VMTx, receipt *pb.Receipt) {
-	// TODO: possible concurrent conflict to resolve
 	normalTx := true
 
 	ret, err := exec.applyTransaction(vmTx.GetIndex(), vmTx.GetTx())
@@ -307,7 +309,9 @@ func (exec *ParallelBlockExecutor) applyVMTx(vmTx VMTx, receipt *pb.Receipt) {
 				}
 
 				for k, v := range m {
+					exec.counterMux.Lock()
 					exec.interchainCounter[k] = append(exec.interchainCounter[k], v)
+					exec.counterMux.Unlock()
 				}
 				normalTx = false
 			}
@@ -315,7 +319,9 @@ func (exec *ParallelBlockExecutor) applyVMTx(vmTx VMTx, receipt *pb.Receipt) {
 	}
 
 	if normalTx {
+		exec.normalTxsMux.Lock()
 		exec.normalTxs = append(exec.normalTxs, vmTx.GetTx().TransactionHash)
+		exec.normalTxsMux.Unlock()
 	}
 }
 
@@ -345,7 +351,15 @@ func (exec *ParallelBlockExecutor) applyTransaction(i int, tx *pb.Transaction) (
 		var instance vm.VM
 		switch tx.Data.VmType {
 		case pb.TransactionData_BVM:
-			ctx := vm.NewContext(tx, uint64(i), tx.Data, exec.ledger, exec.logger)
+			fmt.Printf("interchain manager is:%v\n", exec.boltContracts[constant.ParallelInterchainContractAddr.String()])
+			// get bolt vm contract instance first
+			contract, err := exec.getContract(tx.To.Hex())
+			if err != nil {
+				return nil, err
+			}
+			ctx := vm.NewContext(tx, uint64(i), tx.Data, exec.ledger, exec.logger,
+				vm.WithChCurr(exec.chCurr), vm.WithChNext(exec.chNext),
+				vm.WithContract(contract))
 			instance = boltvm.New(ctx, exec.validationEngine, exec.boltContracts)
 		case pb.TransactionData_XVM:
 			ctx := vm.NewContext(tx, uint64(i), tx.Data, exec.ledger, exec.logger)
@@ -363,6 +377,29 @@ func (exec *ParallelBlockExecutor) applyTransaction(i int, tx *pb.Transaction) (
 
 		return instance.Run(tx.Data.Payload)
 	}
+}
+
+func (exec *ParallelBlockExecutor) getContract(callee string) (boltvm.Contract, error) {
+	var (
+		contract boltvm.Contract
+	)
+	if callee == constant.ParallelInterchainContractAddr.String() {
+		// get interchain contract from contract pool
+		cont, err := exec.interchainContractPool.GetContract()
+		if err != nil {
+			return nil, err
+		}
+		cont.SetChCurr(exec.chCurr)
+		cont.SetChNext(exec.chNext)
+		contract = cont
+	} else {
+		// get normal contract from contract map
+		var ok bool
+		if contract, ok = exec.boltContracts[callee]; !ok {
+			return nil, fmt.Errorf("the address %v is not a bolt contract", callee)
+		}
+	}
+	return contract, nil
 }
 
 func (exec *ParallelBlockExecutor) clear() {

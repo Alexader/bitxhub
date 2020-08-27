@@ -3,6 +3,7 @@ package parallel
 import (
 	"encoding/json"
 	"math/rand"
+	"sort"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/meshplus/bitxhub-kit/types"
 	"github.com/meshplus/bitxhub-model/pb"
 	"github.com/meshplus/bitxhub/internal/constant"
+	"github.com/meshplus/bitxhub/internal/ledger"
 	"github.com/meshplus/bitxhub/internal/ledger/mock_ledger"
 	"github.com/stretchr/testify/assert"
 )
@@ -31,7 +33,33 @@ func TestGroup(t *testing.T) {
 		Height:    1,
 		BlockHash: types.String2Hash(from),
 	}
+	evs := make([]*pb.Event, 0)
+	m := make(map[string]uint64)
+	m[from] = 3
+	data, err := json.Marshal(m)
+	assert.Nil(t, err)
+	ev := &pb.Event{
+		TxHash:     types.String2Hash(from),
+		Data:       data,
+		Interchain: true,
+	}
+	evs = append(evs, ev)
 	mockLedger.EXPECT().GetChainMeta().Return(chainMeta).AnyTimes()
+	mockLedger.EXPECT().GetBalance(gomock.Any()).Return(uint64(100)).AnyTimes()
+	mockLedger.EXPECT().Events(gomock.Any()).Return(evs).AnyTimes()
+	mockLedger.EXPECT().Commit(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockLedger.EXPECT().Clear().AnyTimes()
+	mockLedger.EXPECT().GetState(gomock.Any(), gomock.Any()).Return(true, []byte("10")).AnyTimes()
+	mockLedger.EXPECT().SetState(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	mockLedger.EXPECT().GetBalance(gomock.Any()).Return(uint64(10)).AnyTimes()
+	mockLedger.EXPECT().SetBalance(gomock.Any(), gomock.Any()).AnyTimes()
+	mockLedger.EXPECT().SetNonce(gomock.Any(), gomock.Any()).AnyTimes()
+	mockLedger.EXPECT().GetNonce(gomock.Any()).Return(uint64(0)).AnyTimes()
+	mockLedger.EXPECT().SetCode(gomock.Any(), gomock.Any()).AnyTimes()
+	mockLedger.EXPECT().GetCode(gomock.Any()).Return([]byte("10")).AnyTimes()
+	mockLedger.EXPECT().PersistExecutionResult(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockLedger.EXPECT().FlushDirtyDataAndComputeJournal().Return(make(map[string]*ledger.Account), &ledger.BlockJournal{}).AnyTimes()
+	mockLedger.EXPECT().PersistBlockData(gomock.Any()).AnyTimes()
 	logger := log.NewWithModule("executor")
 
 	exec, err := New(mockLedger, logger)
@@ -46,7 +74,6 @@ func TestGroup(t *testing.T) {
 	bvmTypes := []constant.BoltContractAddress{constant.AppchainMgrContractAddr, constant.RuleManagerContractAddr}
 	for i := uint64(0); i < 2; i++ {
 		BVMTx := mockNormalTx(t, bvmTypes[i])
-		BVMTx.TransactionHash = BVMTx.Hash()
 		txs = append(txs, BVMTx)
 	}
 
@@ -54,41 +81,39 @@ func TestGroup(t *testing.T) {
 	for i := uint64(0); i < 4; i++ {
 		ibtp := mockInterchainIBTP(t, i+1, pb.IBTP_INTERCHAIN, appchains[i])
 		BVMData := mockInterchainTxData(t, ibtp)
-		BVMTx := mockInterchainTx(t, BVMData)
-		BVMTx.TransactionHash = BVMTx.Hash()
+		BVMTx := mockInterchainTx(BVMData)
 		txs = append(txs, BVMTx)
 	}
 
 	// set tx of TransactionData_XVM type
 	XVMTx := mockXVMTx(t)
-	XVMTx.TransactionHash = XVMTx.Hash()
 	txs = append(txs, XVMTx)
 	// set tx of TransactionData_NORMAL type
 	NormalTx := mockXVMTx(t)
-	NormalTx.TransactionHash = NormalTx.Hash()
 	txs = append(txs, NormalTx)
 
 	appchains = []string{appchainC, appchainD, appchainC, appchainA}
 	for i := uint64(0); i < 4; i++ {
 		ibtp := mockInterchainIBTP(t, i+3, pb.IBTP_INTERCHAIN, appchains[i])
 		BVMData := mockInterchainTxData(t, ibtp)
-		BVMTx := mockInterchainTx(t, BVMData)
-		BVMTx.TransactionHash = BVMTx.Hash()
+		BVMTx := mockInterchainTx(BVMData)
 		txs = append(txs, BVMTx)
 	}
 
 	// add one asset_exchange tx
 	assetExchangeTx := mockAssetExchangeTx(t)
-	assetExchangeTx.TransactionHash = assetExchangeTx.Hash()
 	txs = append(txs, assetExchangeTx)
 
 	// set signature for txs
 	for _, tx := range txs {
-		sig, err := privKey.Sign(tx.SignHash().Bytes())
-		assert.Nil(t, err)
-		tx.Signature = sig
+		tx.Timestamp = time.Now().UnixNano()
+		tx.Nonce = rand.Int63()
 		tx.From, err = pubKey.Address()
 		assert.Nil(t, err)
+		sig, err := privKey.Sign(tx.SignHash().Bytes())
+		tx.Signature = sig
+		assert.Nil(t, err)
+		tx.TransactionHash = tx.Hash()
 	}
 
 	g, err := exec.groupTxs(txs)
@@ -115,16 +140,32 @@ func TestGroup(t *testing.T) {
 	interchainGroup, ok := bvmGroup.SubGroups[1].(*SubGroupInterchain)
 	assert.True(t, ok)
 	assert.Equal(t, 4, len(interchainGroup.interchainGroups))
-	assert.Equal(t, 3, len(interchainGroup.interchainGroups[0]))
-	assert.Equal(t, 2, len(interchainGroup.interchainGroups[1]))
-	assert.Equal(t, 2, len(interchainGroup.interchainGroups[2]))
-	assert.Equal(t, 1, len(interchainGroup.interchainGroups[3]))
+	groupLens := [4]int{
+		len(interchainGroup.interchainGroups[0]),
+		len(interchainGroup.interchainGroups[1]),
+		len(interchainGroup.interchainGroups[2]),
+		len(interchainGroup.interchainGroups[3]),
+	}
+
+	sort.Ints(groupLens[:])
+	assert.Equal(t, [4]int{1, 2, 2, 3}, groupLens)
 
 	assetGroup, ok := bvmGroup.SubGroups[2].(*SubGroupNormal)
 	assert.True(t, ok)
 	assert.Equal(t, 1, len(assetGroup.normalGroup))
 	assert.True(t, !assetGroup.normalGroup[0].isIBTP)
 	assert.Equal(t, assetExchangeTx, assetGroup.normalGroup[0].tx)
+
+	// process mock block
+	block := mockBlock(uint64(2), txs)
+	exec.processExecuteEvent(block)
+
+	blockData := <-exec.persistC
+	rs := blockData.Receipts
+	assert.Equal(t, len(txs), len(rs))
+	for i, r := range rs {
+		assert.Equal(t, txs[i].TransactionHash.Hex(), r.TxHash.Hex())
+	}
 }
 
 func TestExecute(t *testing.T) {
@@ -171,12 +212,10 @@ func mockNormalTx(t *testing.T, boltAddr constant.BoltContractAddress) *pb.Trans
 	}
 }
 
-func mockInterchainTx(t *testing.T, data *pb.TransactionData) *pb.Transaction {
+func mockInterchainTx(data *pb.TransactionData) *pb.Transaction {
 	return &pb.Transaction{
-		From:  randAddress(t),
-		To:    types.String2Address(constant.ParallelInterchainContractAddr.String()),
-		Data:  data,
-		Nonce: rand.Int63(),
+		To:   types.String2Address(constant.ParallelInterchainContractAddr.String()),
+		Data: data,
 	}
 }
 
@@ -203,10 +242,8 @@ func mockAssetExchangeTx(t *testing.T) *pb.Transaction {
 	}
 
 	return &pb.Transaction{
-		From:  randAddress(t),
-		To:    types.String2Address(constant.ParallelInterchainContractAddr.String()),
-		Data:  data,
-		Nonce: rand.Int63(),
+		To:   types.String2Address(constant.ParallelInterchainContractAddr.String()),
+		Data: data,
 	}
 }
 
@@ -226,10 +263,8 @@ func mockXVMTx(t *testing.T) *pb.Transaction {
 	}
 
 	return &pb.Transaction{
-		From:  randAddress(t),
-		To:    types.String2Address(constant.ParallelInterchainContractAddr.String()),
-		Data:  data,
-		Nonce: rand.Int63(),
+		To:   types.String2Address(constant.ParallelInterchainContractAddr.String()),
+		Data: data,
 	}
 }
 

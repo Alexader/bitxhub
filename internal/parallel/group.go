@@ -2,11 +2,11 @@ package parallel
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/meshplus/bitxhub-model/pb"
 	"github.com/meshplus/bitxhub/internal/constant"
-	"github.com/meshplus/bitxhub/pkg/vm/boltvm"
 )
 
 const (
@@ -174,10 +174,12 @@ func (exec *ParallelBlockExecutor) executeBVMGroup(bvm *BVMGroup) []*pb.Receipt 
 	// sequence execution in bvm group
 	receipts := make([]*pb.Receipt, 0)
 
+	fmt.Printf("bvm sub group size:%d\n", len(bvm.SubGroups))
 	for _, sub := range bvm.SubGroups {
 		rs := sub.Execute()
 		receipts = append(receipts, rs...)
 	}
+	fmt.Printf("bvm sub group rs size:%d\n", len(receipts))
 	return receipts
 }
 
@@ -190,6 +192,7 @@ func (normal *SubGroupNormal) Execute() []*pb.Receipt {
 			Version: tx.GetTx().Version,
 			TxHash:  tx.GetTx().TransactionHash,
 		}
+		fmt.Println("normal tx for bvm")
 		normal.exec.applyVMTx(tx, receipt)
 		receipts = append(receipts, receipt)
 	}
@@ -210,75 +213,74 @@ func (interchain *SubGroupInterchain) Execute() []*pb.Receipt {
 
 			mux.Lock()
 			defer mux.Unlock()
-			receipts = append(receipts, interchain.executeInterchainGroup(inter)...)
+			receipts = append(receipts, interchain.exec.executeInterchainGroup(inter)...)
 		}(inter)
 	}
 	wg.Wait()
 	return receipts
 }
 
-func (interchain *SubGroupInterchain) executeInterchainGroup(txs []*BVMTx) []*pb.Receipt {
+func (exec *ParallelBlockExecutor) executeInterchainGroup(txs []*BVMTx) []*pb.Receipt {
 	// parallelizing validation engine part
 	receipts := make([]*pb.Receipt, 0, len(txs))
 	mux := sync.Mutex{}
-	for _, interchainGroup := range interchain.interchainGroups {
-		go func(txQueue []*BVMTx) {
-			chCurr := make(chan bool)
-			chNext := make(chan bool)
-			chCurr <- true
-			wg := sync.WaitGroup{}
-			wg.Add(len(txQueue))
+	chCurr := make(chan bool, 1)
+	chNext := make(chan bool)
+	chCurr <- true
+	wg := sync.WaitGroup{}
+	wg.Add(len(txs))
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			// set signal between contracts
-			go func() {
-				for {
-					select {
-					case <-chNext:
-						chCurr <- true
-					case <-ctx.Done():
-						return
-					}
-				}
-			}()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// set signal between contracts
+	go func() {
+		for {
+			select {
+			case <-chNext:
+				chCurr <- true
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
-			exec := interchain.exec
-			for _, bvmTx := range txQueue {
-				// interchain txs inside a group can be parallelized in validation engine
-				go func(vmTx *BVMTx) {
-					defer wg.Done()
+	for _, bvmTx := range txs {
+		// interchain txs inside a group can be parallelized in validation engine
+		go func(vmTx *BVMTx) {
+			defer wg.Done()
 
-					receipt := &pb.Receipt{
-						Version: vmTx.GetTx().Version,
-						TxHash:  vmTx.GetTx().TransactionHash,
-					}
-
-					// set available interchain contract into map of executor
-					cont, err := exec.interchainContractPool.GetContract()
-					if err != nil {
-						receiptFail(receipt, err)
-					}
-					exec.boltContracts[constant.ParallelInterchainContractAddr.String()] =
-						&boltvm.BoltContract{
-							Enabled:  true,
-							Name:     "parallel interchain manager contract",
-							Address:  constant.ParallelInterchainContractAddr.String(),
-							Contract: cont,
-						}
-
-					cont.SetChCurr(chCurr)
-					cont.SetChNext(chNext)
-					exec.applyVMTx(vmTx, receipt)
-
-					mux.Lock()
-					defer mux.Unlock()
-					receipts = append(receipts, receipt)
-				}(bvmTx)
+			receipt := &pb.Receipt{
+				Version: vmTx.GetTx().Version,
+				TxHash:  vmTx.GetTx().TransactionHash,
 			}
 
-			wg.Wait()
-		}(interchainGroup)
+			// set available interchain contract into map of executor
+			cont, err := exec.interchainContractPool.GetContract()
+			if err != nil {
+				fmt.Printf("get contract err:%s\n", err.Error())
+				receiptFail(receipt, err)
+				mux.Lock()
+				defer mux.Unlock()
+				receipts = append(receipts, receipt)
+				return
+			}
+
+			cont.SetChCurr(chCurr)
+			cont.SetChNext(chNext)
+			exec.boltContracts[constant.ParallelInterchainContractAddr.String()] = cont
+			exec.applyVMTx(vmTx, receipt)
+
+			mux.Lock()
+			defer mux.Unlock()
+			receipts = append(receipts, receipt)
+		}(bvmTx)
+		// gree contract to pool
+		//if err := exec.interchainContractPool.FreeContract(cont); err != nil {
+		//	fmt.Printf("free contract err:%s\n", err.Error())
+		//	return
+		//}
 	}
+
+	wg.Wait()
 	return receipts
 }

@@ -12,7 +12,7 @@ const (
 	AppchainMgrContractAddr        BoltContractAddress = "0x000000000000000000000000000000000000000e"
 	TransactionMgrContractAddr     BoltContractAddress = "0x000000000000000000000000000000000000000f"
 	AssetExchangeContractAddr      BoltContractAddress = "0x0000000000000000000000000000000000000010"
-	ParallelInterchainContractAddr BoltContractAddress = "0x0000000000000000000000000000000000000011"
+	ParallelInterchainContractAddr BoltContractAddress = "0x000000000000000000000000000000000000000a"
 )
 
 func (addr BoltContractAddress) Address() types.Address {

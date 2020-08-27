@@ -3,6 +3,7 @@ package parallel
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/event"
@@ -36,12 +37,16 @@ type ParallelBlockExecutor struct {
 	persistC               chan *ledger.BlockData
 	pendingBlockQ          *cache.Cache
 	interchainCounter      map[string][]uint64
+	counterMux             sync.Mutex
 	normalTxs              []types.Hash
+	normalTxsMux           sync.Mutex
 	validationEngine       validator.Engine
 	currentHeight          uint64
 	currentBlockHash       types.Hash
 	boltContracts          map[string]boltvm.Contract
-	interchainContractPool ContractPool
+	interchainContractPool *ContractPool
+	chCurr                 chan bool
+	chNext                 chan bool
 	wasmInstances          map[string]wasmer.Instance
 
 	blockFeed event.Feed
@@ -78,6 +83,8 @@ func New(chainLedger ledger.Ledger, logger logrus.FieldLogger) (*ParallelBlockEx
 		currentBlockHash:       chainLedger.GetChainMeta().BlockHash,
 		boltContracts:          boltContracts,
 		interchainContractPool: interchainContractPool,
+		chCurr:                 make(chan bool, 1),
+		chNext:                 make(chan bool),
 		wasmInstances:          make(map[string]wasmer.Instance),
 	}, nil
 }
@@ -169,6 +176,12 @@ func (exec *ParallelBlockExecutor) persistData() {
 
 func registerBoltContracts() map[string]boltvm.Contract {
 	boltContracts := []*boltvm.BoltContract{
+		{
+			Enabled:  true,
+			Name:     "interchain manager contract",
+			Address:  constant.ParallelInterchainContractAddr.String(),
+			Contract: &contracts.ParallelInterchainManager{},
+		},
 		{
 			Enabled:  true,
 			Name:     "store service",
