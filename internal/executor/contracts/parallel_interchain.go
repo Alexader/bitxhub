@@ -106,6 +106,9 @@ func (x *ParallelInterchainManager) HandleIBTP(data []byte) *boltvm.Response {
 		x.curSeq.Inc()
 
 		// notify the process of next ibtp
+		x.cond.L.Lock()
+		defer x.cond.L.Unlock()
+
 		x.cond.Broadcast()
 		fmt.Println("notify another interchain tx")
 	}()
@@ -126,11 +129,11 @@ func (x *ParallelInterchainManager) HandleIBTP(data []byte) *boltvm.Response {
 
 	res := boltvm.Success(nil)
 
+	x.cond.L.Lock()
 	for x.curSeq.Load() != x.seq {
-		x.cond.L.Lock()
 		x.cond.Wait()
-		x.cond.L.Unlock()
 	}
+	x.cond.L.Unlock()
 
 	fmt.Printf("start interchain tx: %s\n", ibtp.ID())
 	interchain := &ParallelInterchain{}
