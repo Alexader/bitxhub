@@ -21,7 +21,7 @@ var _ vm.VM = (*WasmVM)(nil)
 // Wasm represents the wasm vm in BitXHub
 type WasmVM struct {
 	// contract context
-	ctx *vm.Context
+	ctx *Context
 
 	// wasm
 	w *wasm.Wasm
@@ -37,7 +37,7 @@ type Contract struct {
 }
 
 // New creates a wasm vm instance
-func New(ctx *vm.Context, imports *wasmer.Imports, instances map[string]wasmer.Instance) (*WasmVM, error) {
+func New(ctx *Context, imports *wasmer.Imports, instances map[string]wasmer.Instance) (*WasmVM, error) {
 	wasmVM := &WasmVM{
 		ctx: ctx,
 	}

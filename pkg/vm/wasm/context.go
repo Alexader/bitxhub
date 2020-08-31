@@ -9,37 +9,33 @@ import (
 
 // Context represents the context of wasm
 type Context struct {
-	caller          types.Address
-	callee          types.Address
-	ledger          ledger.Ledger
-	transactionData *pb.TransactionData
-	nonce           int64
-	logger          logrus.FieldLogger
+	Caller           types.Address
+	Callee           types.Address
+	Ledger           ledger.Ledger
+	TransactionIndex uint64
+	TransactionHash  types.Hash
+	TransactionData  *pb.TransactionData
+	Nonce            int64
+	Logger           logrus.FieldLogger
 }
+
+type Option func(*Context)
 
 // NewContext creates a context of wasm instance
-func NewContext(tx *pb.Transaction, data *pb.TransactionData, ledger ledger.Ledger, logger logrus.FieldLogger) *Context {
-	return &Context{
-		caller:          tx.From,
-		callee:          tx.To,
-		ledger:          ledger,
-		transactionData: data,
-		nonce:           tx.Nonce,
-		logger:          logger,
+func NewContext(tx *pb.Transaction, txIndex uint64, data *pb.TransactionData,
+	ledger ledger.Ledger, logger logrus.FieldLogger, opts ...Option) *Context {
+	context := &Context{
+		Caller:           tx.From,
+		Callee:           tx.To,
+		Ledger:           ledger,
+		TransactionIndex: txIndex,
+		TransactionHash:  tx.TransactionHash,
+		TransactionData:  data,
+		Nonce:            tx.Nonce,
+		Logger:           logger,
 	}
-}
-
-// Caller returns the tx caller address
-func (ctx *Context) Caller() string {
-	return ctx.caller.Hex()
-}
-
-// Callee returns the tx callee address
-func (ctx *Context) Callee() string {
-	return ctx.callee.Hex()
-}
-
-// Logger returns the log instance
-func (ctx *Context) Logger() logrus.FieldLogger {
-	return ctx.logger
+	for _, opt := range opts {
+		opt(context)
+	}
+	return context
 }

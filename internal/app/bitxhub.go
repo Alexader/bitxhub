@@ -13,6 +13,7 @@ import (
 	"github.com/meshplus/bitxhub/internal/ledger"
 	"github.com/meshplus/bitxhub/internal/ledger/genesis"
 	"github.com/meshplus/bitxhub/internal/loggers"
+	"github.com/meshplus/bitxhub/internal/parallel"
 	orderplg "github.com/meshplus/bitxhub/internal/plugins"
 	"github.com/meshplus/bitxhub/internal/repo"
 	"github.com/meshplus/bitxhub/internal/router"
@@ -127,12 +128,12 @@ func generateBitXHubWithoutOrder(rep *repo.Repo) (*BitXHub, error) {
 	}
 
 	// 1. create executor and view executor
-	txExec, err := executor.New(rwLdg, loggers.Logger(loggers.Executor))
+	txExec, err := parallel.New(rwLdg, loggers.Logger(loggers.Executor))
 	if err != nil {
 		return nil, fmt.Errorf("create BlockExecutor: %w", err)
 	}
 
-	viewExec, err := executor.New(viewLdg, loggers.Logger(loggers.Executor))
+	viewExec, err := parallel.New(viewLdg, loggers.Logger(loggers.Executor))
 	if err != nil {
 		return nil, fmt.Errorf("create ViewExecutor: %w", err)
 	}

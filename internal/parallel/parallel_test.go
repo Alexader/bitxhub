@@ -2,6 +2,7 @@ package parallel
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/rand"
 	"sort"
 	"testing"
@@ -69,9 +70,12 @@ func TestGroup(t *testing.T) {
 	privKey, err := ecdsa.GenerateKey(ecdsa.Secp256r1)
 	assert.Nil(t, err)
 	pubKey := privKey.PublicKey()
+	addr, err := pubKey.Address()
+	assert.Nil(t, err)
+	from = addr.String()
 
 	// set tx of TransactionData_BVM type
-	bvmTypes := []constant.BoltContractAddress{constant.AppchainMgrContractAddr, constant.RuleManagerContractAddr}
+	bvmTypes := []constant.BoltContractAddress{constant.AppchainMgrContractAddr, constant.AppchainMgrContractAddr}
 	for i := uint64(0); i < 2; i++ {
 		BVMTx := mockNormalTx(t, bvmTypes[i])
 		txs = append(txs, BVMTx)
@@ -165,6 +169,10 @@ func TestGroup(t *testing.T) {
 	assert.Equal(t, len(txs), len(rs))
 	for i, r := range rs {
 		assert.Equal(t, txs[i].TransactionHash.Hex(), r.TxHash.Hex())
+		assert.Equal(t, pb.Receipt_SUCCESS, r.Status)
+		if r.Status == pb.Receipt_FAILED {
+			fmt.Printf("receipt content is for index %d: %s\n", i, r.Ret)
+		}
 	}
 }
 
@@ -178,7 +186,7 @@ func mockInterchainTxData(t *testing.T, ibtp *pb.IBTP) *pb.TransactionData {
 
 	tmpIP := &pb.InvokePayload{
 		Method: "HandleIBTP",
-		Args:   []*pb.Arg{{Value: arg}},
+		Args:   []*pb.Arg{pb.Bytes(arg)},
 	}
 	pd, err := tmpIP.Marshal()
 	assert.Nil(t, err)
@@ -190,12 +198,37 @@ func mockInterchainTxData(t *testing.T, ibtp *pb.IBTP) *pb.TransactionData {
 	}
 }
 
-func mockNormalTx(t *testing.T, boltAddr constant.BoltContractAddress) *pb.Transaction {
-	tmpIP := &pb.InvokePayload{
+func registerPayload() *pb.InvokePayload {
+	return &pb.InvokePayload{
 		Method: "Register",
-		Args:   []*pb.Arg{{Value: []byte("name=fabric")}},
+		Args: []*pb.Arg{
+			pb.String("validator"),
+			pb.Int32(1), pb.String("fabric"),
+			pb.String("fab"), pb.String("fabric for law"),
+			pb.String("1.4.3"), pb.String(""),
+		},
 	}
-	pd, err := tmpIP.Marshal()
+}
+
+func rulePayload() *pb.InvokePayload {
+	return &pb.InvokePayload{
+		Method: "RegisterRule",
+		Args: []*pb.Arg{
+			pb.String("validator"),
+			pb.Int32(1), pb.String("fabric"),
+		},
+	}
+}
+
+func mockNormalTx(t *testing.T, boltAddr constant.BoltContractAddress) *pb.Transaction {
+	var pl *pb.InvokePayload
+	switch boltAddr {
+	case constant.AppchainMgrContractAddr:
+		pl = registerPayload()
+	case constant.RuleManagerContractAddr:
+		pl = rulePayload()
+	}
+	pd, err := pl.Marshal()
 	assert.Nil(t, err)
 
 	data := &pb.TransactionData{
@@ -205,7 +238,7 @@ func mockNormalTx(t *testing.T, boltAddr constant.BoltContractAddress) *pb.Trans
 	}
 
 	return &pb.Transaction{
-		From:  randAddress(t),
+		From:  types.String2Address(from),
 		To:    types.String2Address(boltAddr.String()),
 		Data:  data,
 		Nonce: rand.Int63(),
@@ -269,16 +302,17 @@ func mockXVMTx(t *testing.T) *pb.Transaction {
 }
 
 func mockInterchainIBTP(t *testing.T, index uint64, typ pb.IBTP_Type, dstChain string) *pb.IBTP {
-	content := pb.Content{
+	content := &pb.Content{
 		SrcContractId: from,
 		DstContractId: dstChain,
-		Func:          "set",
+		Func:          "interchainCharge",
+		Args:          [][]byte{[]byte(from + ",1,Alice,Bob,1")},
 	}
 
 	bytes, err := content.Marshal()
 	assert.Nil(t, err)
 
-	ibtppd, err := json.Marshal(pb.Payload{
+	ibtppd, err := json.Marshal(&pb.Payload{
 		Encrypted: false,
 		Content:   bytes,
 	})

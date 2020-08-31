@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	appchainMgr "github.com/meshplus/bitxhub-core/appchain-mgr"
 	"github.com/meshplus/bitxhub-kit/types"
@@ -15,15 +16,10 @@ import (
 
 type ParallelInterchainManager struct {
 	boltvm.Stub
-	chCurr chan bool // used to control the execution flow of validation engine
-	chNext chan bool
-	inUse  atomic.Bool
-}
-
-func New() *ParallelInterchainManager {
-	return &ParallelInterchainManager{
-		inUse: atomic.Bool{},
-	}
+	seq int32 // the sequence number of the interchain tx in group
+	// to be executed on this contract
+	curSeq *atomic.Int32 // the current sequence of executing interchain tx in its group
+	cond   *sync.Cond    // the condition var to notify other waiting interchain tx instance
 }
 
 type ParallelInterchain struct {
@@ -56,17 +52,22 @@ func (p *ParallelInterchain) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// get the atomic status of interchain manager
-func (x *ParallelInterchainManager) GetStatus() *atomic.Bool {
-	return &x.inUse
+// SetCurrSequence is to set a shared atomic int32 var among all contracts
+// whose interchain tx is in the same interchain group.
+func (x *ParallelInterchainManager) SetCurrSequence(seq *atomic.Int32) {
+	x.curSeq = seq
 }
 
-func (x *ParallelInterchainManager) SetChCurr(ch chan bool) {
-	x.chCurr = ch
+// args: cond, conditional variable for synchronizing between contracts
+// SetCond will set a conditional var shared among all contracts whose interchain tx
+// is in the same interchain group.
+func (x *ParallelInterchainManager) SetCond(cond *sync.Cond) {
+	x.cond = cond
 }
 
-func (x *ParallelInterchainManager) SetChNext(ch chan bool) {
-	x.chNext = ch
+// SetSequnce will set the sequence of interchain tx to executed on this contract
+func (x *ParallelInterchainManager) SetSequnce(seq int32) {
+	x.seq = seq
 }
 
 func (x *ParallelInterchainManager) Register() *boltvm.Response {
@@ -100,6 +101,15 @@ func (x *ParallelInterchainManager) Interchain() *boltvm.Response {
 }
 
 func (x *ParallelInterchainManager) HandleIBTP(data []byte) *boltvm.Response {
+	defer func() {
+		// increase current sequence to advance other contract
+		x.curSeq.Inc()
+
+		// notify the process of next ibtp
+		x.cond.Broadcast()
+		fmt.Println("notify another interchain tx")
+	}()
+
 	ok := x.Has(x.appchainKey(x.Caller()))
 	if !ok {
 		return boltvm.Error("this appchain does not exist")
@@ -115,33 +125,37 @@ func (x *ParallelInterchainManager) HandleIBTP(data []byte) *boltvm.Response {
 	}
 
 	res := boltvm.Success(nil)
-	select {
-	case <-x.chCurr:
-		interchain := &ParallelInterchain{}
-		x.GetObject(x.appchainKey(ibtp.From), &interchain)
-		if err := x.checkIndex(ibtp, interchain); err != nil {
-			return boltvm.Error(err.Error())
-		}
 
-		if pb.IBTP_INTERCHAIN == ibtp.Type {
-			res = x.beginTransaction(ibtp)
-		} else if pb.IBTP_RECEIPT_SUCCESS == ibtp.Type || pb.IBTP_RECEIPT_FAILURE == ibtp.Type {
-			res = x.reportTransaction(ibtp)
-		} else if pb.IBTP_ASSET_EXCHANGE_INIT == ibtp.Type ||
-			pb.IBTP_ASSET_EXCHANGE_REDEEM == ibtp.Type ||
-			pb.IBTP_ASSET_EXCHANGE_REFUND == ibtp.Type {
-			res = x.handleAssetExchange(ibtp)
-		}
-
-		if !res.Ok {
-			return res
-		}
-
-		x.ProcessIBTP(ibtp, interchain)
-		// notify the process of next ibtp
-		x.chNext <- true
+	for x.curSeq.Load() != x.seq {
+		x.cond.L.Lock()
+		x.cond.Wait()
+		x.cond.L.Unlock()
 	}
 
+	fmt.Printf("start interchain tx: %s\n", ibtp.ID())
+	interchain := &ParallelInterchain{}
+	x.GetObject(x.appchainKey(ibtp.From), &interchain)
+	if err := x.checkIndex(ibtp, interchain); err != nil {
+		fmt.Printf("tx index wrong %s\n", err.Error())
+		return boltvm.Error(err.Error())
+	}
+
+	if pb.IBTP_INTERCHAIN == ibtp.Type {
+		fmt.Println("invoke begin interchain tx")
+		res = x.beginTransaction(ibtp)
+	} else if pb.IBTP_RECEIPT_SUCCESS == ibtp.Type || pb.IBTP_RECEIPT_FAILURE == ibtp.Type {
+		res = x.reportTransaction(ibtp)
+	} else if pb.IBTP_ASSET_EXCHANGE_INIT == ibtp.Type ||
+		pb.IBTP_ASSET_EXCHANGE_REDEEM == ibtp.Type ||
+		pb.IBTP_ASSET_EXCHANGE_REFUND == ibtp.Type {
+		res = x.handleAssetExchange(ibtp)
+	}
+
+	if !res.Ok {
+		return res
+	}
+
+	x.ProcessIBTP(ibtp, interchain)
 	return res
 }
 

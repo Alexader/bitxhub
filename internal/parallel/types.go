@@ -1,6 +1,9 @@
 package parallel
 
-import "github.com/meshplus/bitxhub-model/pb"
+import (
+	"github.com/meshplus/bitxhub-model/pb"
+	"github.com/meshplus/bitxhub/pkg/vm/boltvm"
+)
 
 type XVMGroup struct {
 	XvmTxs []*XVMTx
@@ -64,4 +67,8 @@ func (xvmTx *XVMTx) GetIndex() int {
 
 func (xvmTx *XVMTx) GetTx() *pb.Transaction {
 	return xvmTx.tx
+}
+
+type TxOpt struct {
+	Contract boltvm.Contract
 }

@@ -8,41 +8,40 @@ import (
 )
 
 type Context struct {
-	caller           types.Address
-	callee           types.Address
-	ledger           ledger.Ledger
-	transactionIndex uint64
-	transactionHash  types.Hash
-	logger           logrus.FieldLogger
+	Caller           types.Address
+	Callee           types.Address
+	Ledger           ledger.Ledger
+	TransactionIndex uint64
+	TransactionHash  types.Hash
+	TransactionData  *pb.TransactionData
+	Nonce            int64
+	Logger           logrus.FieldLogger
+	Contract         Contract
 }
 
-func NewContext(tx *pb.Transaction, txIndex uint64, data *pb.TransactionData, ledger ledger.Ledger, logger logrus.FieldLogger) *Context {
-	return &Context{
-		caller:           tx.From,
-		callee:           tx.To,
-		ledger:           ledger,
-		transactionIndex: txIndex,
-		transactionHash:  tx.TransactionHash,
-		logger:           logger,
+type Option func(*Context)
+
+func NewContext(tx *pb.Transaction, txIndex uint64, data *pb.TransactionData,
+	ledger ledger.Ledger, logger logrus.FieldLogger, opts ...Option) *Context {
+	context := &Context{
+		Caller:           tx.From,
+		Callee:           tx.To,
+		Ledger:           ledger,
+		TransactionIndex: txIndex,
+		TransactionHash:  tx.TransactionHash,
+		TransactionData:  data,
+		Nonce:            tx.Nonce,
+		Logger:           logger,
 	}
+	for _, opt := range opts {
+		opt(context)
+	}
+	return context
 }
 
-func (ctx *Context) Caller() string {
-	return ctx.caller.Hex()
-}
-
-func (ctx *Context) Callee() string {
-	return ctx.callee.Hex()
-}
-
-func (ctx *Context) TransactionIndex() uint64 {
-	return ctx.transactionIndex
-}
-
-func (ctx *Context) TransactionHash() types.Hash {
-	return ctx.transactionHash
-}
-
-func (ctx *Context) Logger() logrus.FieldLogger {
-	return ctx.logger
+// WithContract allows interchain contract instance in contract pool to be passed outside vm
+func WithContract(contract Contract) Option {
+	return func(context *Context) {
+		context.Contract = contract
+	}
 }

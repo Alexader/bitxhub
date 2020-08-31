@@ -23,8 +23,9 @@ import (
 )
 
 func (exec *ParallelBlockExecutor) handleExecuteEvent(block *pb.Block) {
+	fmt.Println("block got in")
 	if !exec.isDemandNumber(block.BlockHeader.Number) {
-		fmt.Printf("worng block number: %d", block.BlockHeader.Number)
+		fmt.Printf("worng block number: %d\n", block.BlockHeader.Number)
 		exec.addPendingExecuteEvent(block)
 		return
 	}
@@ -60,7 +61,6 @@ func (exec *ParallelBlockExecutor) processExecuteEvent(block *pb.Block) {
 	exec.normalTxs = make([]types.Hash, 0)
 	validTxs, invalidReceipts := exec.verifySign(block)
 
-	exec.logger.Infof("validTxs len %d", len(validTxs))
 	// group tx by its vm type and from-to addresses
 	groups, err := exec.groupTxs(validTxs)
 	if err != nil {
@@ -109,7 +109,7 @@ func (exec *ParallelBlockExecutor) processExecuteEvent(block *pb.Block) {
 		"tx_root":      block.BlockHeader.TxRoot.ShortString(),
 		"receipt_root": block.BlockHeader.ReceiptRoot.ShortString(),
 		"state_root":   block.BlockHeader.StateRoot.ShortString(),
-	}).Infof("block meta")
+	}).Debug("block meta")
 	calcBlockSize.Observe(float64(block.Size()))
 	executeBlockDuration.Observe(float64(time.Since(current)) / float64(time.Second))
 
@@ -264,6 +264,11 @@ func (exec *ParallelBlockExecutor) applyTransactionGroups(groups []Group, txCoun
 	wg.Add(len(groups))
 	mux := sync.Mutex{}
 
+	exec.logger.WithFields(logrus.Fields{
+		"xvm size:": len(groups[0].(*XVMGroup).XvmTxs),
+		"bvm size":  len(groups[1].(*BVMGroup).SubGroups),
+		"txCount":   txCount,
+	}).Infof("group info")
 	// parallelizing between groups
 	for _, g := range groups {
 		go func(g Group) {
@@ -287,10 +292,10 @@ func (exec *ParallelBlockExecutor) applyTransactionGroups(groups []Group, txCoun
 	return receipts
 }
 
-func (exec *ParallelBlockExecutor) applyVMTx(vmTx VMTx, receipt *pb.Receipt) {
+func (exec *ParallelBlockExecutor) applyVMTx(vmTx VMTx, receipt *pb.Receipt, opt *TxOpt) {
 	normalTx := true
 
-	ret, err := exec.applyTransaction(vmTx.GetIndex(), vmTx.GetTx())
+	ret, err := exec.applyTransaction(vmTx.GetIndex(), vmTx.GetTx(), opt)
 	if err != nil {
 		receiptFail(receipt, err)
 	} else {
@@ -338,7 +343,7 @@ func (exec *ParallelBlockExecutor) handlePendingExecuteEvent() {
 	}
 }
 
-func (exec *ParallelBlockExecutor) applyTransaction(i int, tx *pb.Transaction) ([]byte, error) {
+func (exec *ParallelBlockExecutor) applyTransaction(i int, tx *pb.Transaction, opt *TxOpt) ([]byte, error) {
 	if tx.Data == nil {
 		return nil, fmt.Errorf("empty transaction data")
 	}
@@ -351,18 +356,17 @@ func (exec *ParallelBlockExecutor) applyTransaction(i int, tx *pb.Transaction) (
 		var instance vm.VM
 		switch tx.Data.VmType {
 		case pb.TransactionData_BVM:
-			fmt.Printf("interchain manager is:%v\n", exec.boltContracts[constant.ParallelInterchainContractAddr.String()])
 			// get bolt vm contract instance first
-			contract, err := exec.getContract(tx.To.Hex())
+			contract, err := exec.getContract(tx.To.Hex(), opt)
 			if err != nil {
 				return nil, err
 			}
-			ctx := vm.NewContext(tx, uint64(i), tx.Data, exec.ledger, exec.logger,
-				vm.WithChCurr(exec.chCurr), vm.WithChNext(exec.chNext),
-				vm.WithContract(contract))
+			//exec.logger.Infof("contract got is :", contract)
+			ctx := boltvm.NewContext(tx, uint64(i), tx.Data, exec.ledger, exec.logger,
+				boltvm.WithContract(contract))
 			instance = boltvm.New(ctx, exec.validationEngine, exec.boltContracts)
 		case pb.TransactionData_XVM:
-			ctx := vm.NewContext(tx, uint64(i), tx.Data, exec.ledger, exec.logger)
+			ctx := wasm.NewContext(tx, uint64(i), tx.Data, exec.ledger, exec.logger)
 			imports, err := wasm.EmptyImports()
 			if err != nil {
 				return nil, err
@@ -379,19 +383,15 @@ func (exec *ParallelBlockExecutor) applyTransaction(i int, tx *pb.Transaction) (
 	}
 }
 
-func (exec *ParallelBlockExecutor) getContract(callee string) (boltvm.Contract, error) {
+func (exec *ParallelBlockExecutor) getContract(callee string, opt *TxOpt) (boltvm.Contract, error) {
 	var (
 		contract boltvm.Contract
 	)
 	if callee == constant.ParallelInterchainContractAddr.String() {
-		// get interchain contract from contract pool
-		cont, err := exec.interchainContractPool.GetContract()
-		if err != nil {
-			return nil, err
+		if opt == nil || opt.Contract == nil {
+			return nil, fmt.Errorf("empty interchain contract")
 		}
-		cont.SetChCurr(exec.chCurr)
-		cont.SetChNext(exec.chNext)
-		contract = cont
+		contract = opt.Contract
 	} else {
 		// get normal contract from contract map
 		var ok bool

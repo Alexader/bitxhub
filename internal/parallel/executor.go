@@ -44,9 +44,7 @@ type ParallelBlockExecutor struct {
 	currentHeight          uint64
 	currentBlockHash       types.Hash
 	boltContracts          map[string]boltvm.Contract
-	interchainContractPool *ContractPool
-	chCurr                 chan bool
-	chNext                 chan bool
+	interchainContractPool *sync.Pool
 	wasmInstances          map[string]wasmer.Instance
 
 	blockFeed event.Feed
@@ -65,8 +63,11 @@ func New(chainLedger ledger.Ledger, logger logrus.FieldLogger) (*ParallelBlockEx
 	ve := validator.NewValidationEngine(chainLedger, logger)
 
 	boltContracts := registerBoltContracts()
-	interchainContractPool := NewContractPool(contractPollSize)
-
+	interchainContractPool := &sync.Pool{
+		New: func() interface{} {
+			return &contracts.ParallelInterchainManager{}
+		},
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &ParallelBlockExecutor{
@@ -83,8 +84,6 @@ func New(chainLedger ledger.Ledger, logger logrus.FieldLogger) (*ParallelBlockEx
 		currentBlockHash:       chainLedger.GetChainMeta().BlockHash,
 		boltContracts:          boltContracts,
 		interchainContractPool: interchainContractPool,
-		chCurr:                 make(chan bool, 1),
-		chNext:                 make(chan bool),
 		wasmInstances:          make(map[string]wasmer.Instance),
 	}, nil
 }
@@ -136,7 +135,7 @@ func (exec *ParallelBlockExecutor) ApplyReadonlyTransactions(txs []*pb.Transacti
 			TxHash:  tx.TransactionHash,
 		}
 
-		ret, err := exec.applyTransaction(i, tx)
+		ret, err := exec.applyTransaction(i, tx, nil)
 		if err != nil {
 			receiptFail(receipt, err)
 		} else {

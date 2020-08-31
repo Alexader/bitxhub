@@ -27,8 +27,9 @@ import (
 
 const (
 	keyPassword = "bitxhub"
-	from        = "0x3f9d18f7c3a6e5e4c0b877fe3e688ab08840b997"
 )
+
+var from = "0x3f9d18f7c3a6e5e4c0b877fe3e688ab08840b997"
 
 func TestBlockExecutor_ExecuteBlock(t *testing.T) {
 	mockCtl := gomock.NewController(t)

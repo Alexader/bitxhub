@@ -6,7 +6,6 @@ import (
 	"github.com/meshplus/bitxhub-core/validator"
 	"github.com/meshplus/bitxhub-kit/types"
 	"github.com/meshplus/bitxhub-model/pb"
-	"github.com/meshplus/bitxhub/pkg/vm"
 	"github.com/sirupsen/logrus"
 )
 
@@ -14,7 +13,7 @@ var _ Stub = (*BoltStubImpl)(nil)
 
 type BoltStubImpl struct {
 	bvm *BoltVM
-	ctx *vm.Context
+	ctx *Context
 	ve  validator.Engine
 }
 
@@ -109,7 +108,7 @@ func (b *BoltStubImpl) CrossInvoke(address, method string, args ...*pb.Arg) *Res
 		Args:   args,
 	}
 
-	ctx := &vm.Context{
+	ctx := &Context{
 		Caller:           b.bvm.ctx.Caller,
 		Callee:           addr,
 		Ledger:           b.bvm.ctx.Ledger,

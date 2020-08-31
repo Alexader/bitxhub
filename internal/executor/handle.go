@@ -315,10 +315,10 @@ func (exec *BlockExecutor) applyTransaction(i int, tx *pb.Transaction) ([]byte, 
 		var instance vm.VM
 		switch tx.Data.VmType {
 		case pb.TransactionData_BVM:
-			ctx := vm.NewContext(tx, uint64(i), tx.Data, exec.ledger, exec.logger)
+			ctx := boltvm.NewContext(tx, uint64(i), tx.Data, exec.ledger, exec.logger)
 			instance = boltvm.New(ctx, exec.validationEngine, exec.boltContracts)
 		case pb.TransactionData_XVM:
-			ctx := vm.NewContext(tx, uint64(i), tx.Data, exec.ledger, exec.logger)
+			ctx := wasm.NewContext(tx, uint64(i), tx.Data, exec.ledger, exec.logger)
 			imports, err := wasm.EmptyImports()
 			if err != nil {
 				return nil, err

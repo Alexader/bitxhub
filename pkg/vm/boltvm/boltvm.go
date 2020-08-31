@@ -8,18 +8,19 @@ import (
 	"github.com/meshplus/bitxhub-core/validator"
 	"github.com/meshplus/bitxhub-model/pb"
 	"github.com/meshplus/bitxhub/pkg/vm"
+	"github.com/sirupsen/logrus"
 )
 
 var _ vm.VM = (*BoltVM)(nil)
 
 type BoltVM struct {
-	ctx       *vm.Context
+	ctx       *Context
 	ve        validator.Engine
 	contracts map[string]Contract
 }
 
 // New creates a blot vm object
-func New(ctx *vm.Context, ve validator.Engine, contracts map[string]Contract) *BoltVM {
+func New(ctx *Context, ve validator.Engine, contracts map[string]Contract) *BoltVM {
 	return &BoltVM{
 		ctx:       ctx,
 		ve:        ve,
@@ -39,10 +40,19 @@ func (bvm *BoltVM) Run(input []byte) (ret []byte, err error) {
 		return nil, fmt.Errorf("unmarshal invoke payload: %w", err)
 	}
 
-	contract := bvm.ctx.Contract
+	var (
+		contract Contract
+	)
+	// if this is from cross-invoke context, the bvm.ctx.Contract will be nil.
+	if bvm.ctx.Contract == nil {
+		contract, err = GetBoltContract(bvm.ctx.Callee.Hex(), bvm.contracts)
+		if err != nil {
+			return nil, fmt.Errorf("get bolt contract: %w", err)
+		}
+	} else {
+		contract = bvm.ctx.Contract
+	}
 
-	fmt.Printf("contract address is: %s\n", bvm.ctx.Callee.Hex())
-	fmt.Printf("contract structure is: %v\n", contract)
 	rc := reflect.ValueOf(contract)
 	stubField := rc.Elem().Field(0)
 	stub := &BoltStubImpl{
@@ -57,6 +67,10 @@ func (bvm *BoltVM) Run(input []byte) (ret []byte, err error) {
 		return nil, fmt.Errorf("stub filed can`t set")
 	}
 
+	bvm.ctx.Logger.WithFields(logrus.Fields{
+		"contract address": bvm.ctx.Callee.Hex(),
+		"contract method:": payload.Method,
+	}).Debug("start a new contract")
 	// judge whether method is valid
 	m := rc.MethodByName(payload.Method)
 	if !m.IsValid() {
