@@ -27,7 +27,7 @@ type ChainLedger struct {
 	minJnlHeight    uint64
 	maxJnlHeight    uint64
 	events          map[string][]*pb.Event
-	accounts        map[string]*Account
+	accounts        sync.Map
 	accountCache    *AccountCache
 	prevJnlHash     types.Hash
 
@@ -72,7 +72,6 @@ func New(blockchainStore storage.Storage, ldb storage.Storage, accountCache *Acc
 		minJnlHeight:    minJnlHeight,
 		maxJnlHeight:    maxJnlHeight,
 		events:          make(map[string][]*pb.Event, 10),
-		accounts:        make(map[string]*Account),
 		accountCache:    accountCache,
 		prevJnlHash:     prevJnlHash,
 	}

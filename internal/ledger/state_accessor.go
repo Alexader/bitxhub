@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"sort"
+	"sync"
 
 	"github.com/meshplus/bitxhub-kit/types"
 	"github.com/meshplus/bitxhub-model/pb"
@@ -15,13 +16,13 @@ var _ Ledger = (*ChainLedger)(nil)
 // GetOrCreateAccount get the account, if not exist, create a new account
 func (l *ChainLedger) GetOrCreateAccount(addr types.Address) *Account {
 	h := addr.Hex()
-	value, ok := l.accounts[h]
+	value, ok := l.accounts.Load(h)
 	if ok {
-		return value
+		return value.(*Account)
 	}
 
 	account := l.GetAccount(addr)
-	l.accounts[h] = account
+	l.accounts.Store(h, account)
 
 	return account
 }
@@ -101,7 +102,7 @@ func (l *ChainLedger) QueryByPrefix(addr types.Address, prefix string) (bool, []
 
 func (l *ChainLedger) Clear() {
 	l.events = make(map[string][]*pb.Event, 10)
-	l.accounts = make(map[string]*Account)
+	l.accounts = sync.Map{}
 }
 
 // FlushDirtyDataAndComputeJournal gets dirty accounts and computes block journal
@@ -109,10 +110,12 @@ func (l *ChainLedger) FlushDirtyDataAndComputeJournal() (map[string]*Account, *B
 	dirtyAccounts := make(map[string]*Account)
 	var dirtyAccountData []byte
 	var journals []*journal
-	sortedAddr := make([]string, 0, len(l.accounts))
+	var sortedAddr []string
 	accountData := make(map[string][]byte)
 
-	for addr, account := range l.accounts {
+	l.accounts.Range(func(key, value interface{}) bool {
+		addr := key.(string)
+		account := value.(*Account)
 		journal := account.getJournalIfModified()
 		if journal != nil {
 			journals = append(journals, journal)
@@ -120,7 +123,8 @@ func (l *ChainLedger) FlushDirtyDataAndComputeJournal() (map[string]*Account, *B
 			accountData[addr] = account.getDirtyData()
 			dirtyAccounts[addr] = account
 		}
-	}
+		return true
+	})
 
 	sort.Strings(sortedAddr)
 	for _, addr := range sortedAddr {
@@ -162,16 +166,24 @@ func (l *ChainLedger) Commit(height uint64, accounts map[string]*Account, blockJ
 			}
 		}
 
-		for key, val := range account.dirtyState {
-			origVal := account.originState[key]
-			if !bytes.Equal(origVal, val) {
-				if val != nil {
-					ldbBatch.Put(composeStateKey(account.Addr, []byte(key)), val)
+		account.dirtyState.Range(func(key, value interface{}) bool {
+			valBytes := value.([]byte)
+			origVal, ok := account.originState.Load(key)
+			var origValBytes []byte
+			if ok {
+				origValBytes = origVal.([]byte)
+			}
+
+			if !bytes.Equal(origValBytes, valBytes) {
+				if valBytes != nil {
+					ldbBatch.Put(composeStateKey(account.Addr, []byte(key.(string))), valBytes)
 				} else {
-					ldbBatch.Delete(composeStateKey(account.Addr, []byte(key)))
+					ldbBatch.Delete(composeStateKey(account.Addr, []byte(key.(string))))
 				}
 			}
-		}
+
+			return true
+		})
 	}
 
 	data, err := json.Marshal(blockJournal)
