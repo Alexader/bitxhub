@@ -171,6 +171,9 @@ func (exec *ParallelBlockExecutor) buildTxMerkleTree(txs []*pb.Transaction) (typ
 	}
 
 	txHashes := make([]merkletree.Content, 0, len(exec.normalTxs))
+	sort.Slice(exec.normalTxs, func(i, j int) bool {
+		return bytes.Compare(exec.normalTxs[i].Bytes(), exec.normalTxs[j].Bytes()) < 0
+	})
 	for _, txHash := range exec.normalTxs {
 		txHashes = append(txHashes, pb.TransactionHash(txHash.Bytes()))
 	}
