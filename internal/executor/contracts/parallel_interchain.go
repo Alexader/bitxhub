@@ -110,7 +110,7 @@ func (x *ParallelInterchainManager) HandleIBTP(data []byte) *boltvm.Response {
 		defer x.cond.L.Unlock()
 
 		x.cond.Broadcast()
-		fmt.Println("notify another interchain tx")
+		//fmt.Println("notify another interchain tx")
 	}()
 
 	ok := x.Has(x.appchainKey(x.Caller()))
@@ -135,16 +135,16 @@ func (x *ParallelInterchainManager) HandleIBTP(data []byte) *boltvm.Response {
 	}
 	x.cond.L.Unlock()
 
-	fmt.Printf("start interchain tx: %s\n", ibtp.ID())
+	//fmt.Printf("start interchain tx: %s\n", ibtp.ID())
 	interchain := &ParallelInterchain{}
 	x.GetObject(x.appchainKey(ibtp.From), &interchain)
 	if err := x.checkIndex(ibtp, interchain); err != nil {
-		fmt.Printf("tx index wrong %s\n", err.Error())
+		//fmt.Printf("tx index wrong %s\n", err.Error())
 		return boltvm.Error(err.Error())
 	}
 
 	if pb.IBTP_INTERCHAIN == ibtp.Type {
-		fmt.Println("invoke begin interchain tx")
+		//fmt.Println("invoke begin interchain tx")
 		res = x.beginTransaction(ibtp)
 	} else if pb.IBTP_RECEIPT_SUCCESS == ibtp.Type || pb.IBTP_RECEIPT_FAILURE == ibtp.Type {
 		res = x.reportTransaction(ibtp)

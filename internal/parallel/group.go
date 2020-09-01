@@ -208,9 +208,10 @@ func (interchain *SubGroupInterchain) Execute() []*pb.Receipt {
 		go func(inter []*BVMTx) {
 			defer wg.Done()
 
+			groupReceipts := interchain.exec.executeInterchainGroup(inter)
 			mux.Lock()
 			defer mux.Unlock()
-			receipts = append(receipts, interchain.exec.executeInterchainGroup(inter)...)
+			receipts = append(receipts, groupReceipts...)
 		}(inter)
 	}
 	wg.Wait()

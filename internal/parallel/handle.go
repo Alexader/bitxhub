@@ -151,6 +151,9 @@ func (exec *ParallelBlockExecutor) buildTxMerkleTree(txs []*pb.Transaction) (typ
 			defer wg.Done()
 
 			txHashes := make([]merkletree.Content, 0, len(txIndexes))
+			sort.Slice(txIndexes, func(i, j int) bool {
+				return txIndexes[i] < txIndexes[j]
+			})
 			for _, txIndex := range txIndexes {
 				txHashes = append(txHashes, pb.TransactionHash(txs[txIndex].TransactionHash.Bytes()))
 			}

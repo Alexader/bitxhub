@@ -8,21 +8,23 @@ import (
 	"sync"
 
 	"github.com/meshplus/bitxhub-kit/types"
-	"github.com/meshplus/bitxhub-model/pb"
 )
 
 var _ Ledger = (*ChainLedger)(nil)
 
 // GetOrCreateAccount get the account, if not exist, create a new account
 func (l *ChainLedger) GetOrCreateAccount(addr types.Address) *Account {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
 	h := addr.Hex()
-	value, ok := l.accounts.Load(h)
+	value, ok := l.accounts[h]
 	if ok {
-		return value.(*Account)
+		return value
 	}
 
 	account := l.GetAccount(addr)
-	l.accounts.Store(h, account)
+	l.accounts[h] = account
 
 	return account
 }
@@ -101,8 +103,8 @@ func (l *ChainLedger) QueryByPrefix(addr types.Address, prefix string) (bool, []
 }
 
 func (l *ChainLedger) Clear() {
-	l.events = make(map[string][]*pb.Event, 10)
-	l.accounts = sync.Map{}
+	l.events = sync.Map{}
+	l.accounts = make(map[string]*Account)
 }
 
 // FlushDirtyDataAndComputeJournal gets dirty accounts and computes block journal
@@ -113,9 +115,7 @@ func (l *ChainLedger) FlushDirtyDataAndComputeJournal() (map[string]*Account, *B
 	var sortedAddr []string
 	accountData := make(map[string][]byte)
 
-	l.accounts.Range(func(key, value interface{}) bool {
-		addr := key.(string)
-		account := value.(*Account)
+	for addr, account := range l.accounts {
 		journal := account.getJournalIfModified()
 		if journal != nil {
 			journals = append(journals, journal)
@@ -123,8 +123,7 @@ func (l *ChainLedger) FlushDirtyDataAndComputeJournal() (map[string]*Account, *B
 			accountData[addr] = account.getDirtyData()
 			dirtyAccounts[addr] = account
 		}
-		return true
-	})
+	}
 
 	sort.Strings(sortedAddr)
 	for _, addr := range sortedAddr {

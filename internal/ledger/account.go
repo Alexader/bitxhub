@@ -22,6 +22,7 @@ type Account struct {
 	dirtyStateHash types.Hash
 	ldb            storage.Storage
 	cache          *AccountCache
+	lock           sync.RWMutex
 }
 
 type innerAccount struct {
@@ -78,6 +79,9 @@ func (o *Account) SetCodeAndHash(code []byte) {
 
 // Code return the contract code
 func (o *Account) Code() []byte {
+	o.lock.Lock()
+	defer o.lock.Unlock()
+
 	if o.dirtyCode != nil {
 		return o.dirtyCode
 	}
