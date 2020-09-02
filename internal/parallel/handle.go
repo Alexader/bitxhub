@@ -23,7 +23,6 @@ import (
 )
 
 func (exec *ParallelBlockExecutor) handleExecuteEvent(block *pb.Block) {
-	fmt.Println("block got in")
 	if !exec.isDemandNumber(block.BlockHeader.Number) {
 		fmt.Printf("worng block number: %d\n", block.BlockHeader.Number)
 		exec.addPendingExecuteEvent(block)
@@ -77,7 +76,7 @@ func (exec *ParallelBlockExecutor) processExecuteEvent(block *pb.Block) {
 	for i, r := range unorderedReceipts {
 		index, ok := indexM[r.TxHash.Hex()]
 		if !ok {
-			panic("wrong receipt after execution")
+			exec.logger.Panic("wrong receipt after execution")
 		}
 		receipts[index] = unorderedReceipts[i]
 	}
@@ -270,11 +269,6 @@ func (exec *ParallelBlockExecutor) applyTransactionGroups(groups []Group, txCoun
 	wg.Add(len(groups))
 	mux := sync.Mutex{}
 
-	exec.logger.WithFields(logrus.Fields{
-		"xvm size:": len(groups[0].(*XVMGroup).XvmTxs),
-		"bvm size":  len(groups[1].(*BVMGroup).SubGroups),
-		"txCount":   txCount,
-	}).Infof("group info")
 	// parallelizing between groups
 	for _, g := range groups {
 		go func(g Group) {

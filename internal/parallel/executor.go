@@ -24,7 +24,6 @@ import (
 const (
 	blockChanNumber   = 1024
 	persistChanNumber = 1024
-	contractPollSize  = 500
 )
 
 var _ executor.Executor = (*ParallelBlockExecutor)(nil)

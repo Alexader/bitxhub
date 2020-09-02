@@ -102,15 +102,13 @@ func (x *ParallelInterchainManager) Interchain() *boltvm.Response {
 
 func (x *ParallelInterchainManager) HandleIBTP(data []byte) *boltvm.Response {
 	defer func() {
-		// increase current sequence to advance other contract
-		x.curSeq.Inc()
-
 		// notify the process of next ibtp
 		x.cond.L.Lock()
 		defer x.cond.L.Unlock()
 
+		// increase current sequence to advance other contract
+		x.curSeq.Inc()
 		x.cond.Broadcast()
-		//fmt.Println("notify another interchain tx")
 	}()
 
 	ok := x.Has(x.appchainKey(x.Caller()))
