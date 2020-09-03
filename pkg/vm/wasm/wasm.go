@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/meshplus/bitxhub-kit/types"
@@ -37,7 +38,7 @@ type Contract struct {
 }
 
 // New creates a wasm vm instance
-func New(ctx *Context, imports *wasmer.Imports, instances map[string]wasmer.Instance) (*WasmVM, error) {
+func New(ctx *Context, imports *wasmer.Imports, instances *sync.Map) (*WasmVM, error) {
 	wasmVM := &WasmVM{
 		ctx: ctx,
 	}

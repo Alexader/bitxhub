@@ -19,10 +19,11 @@ require (
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/grpc-ecosystem/grpc-gateway v1.13.0
 	github.com/hokaccha/go-prettyjson v0.0.0-20190818114111-108c894c2c0e
+	github.com/lestrrat-go/strftime v1.0.3 // indirect
 	github.com/libp2p/go-libp2p-core v0.3.0
 	github.com/magiconair/properties v1.8.1
-	github.com/meshplus/bitxhub-core v0.1.0-rc1.0.20200728032028-8dba332fa0ed
-	github.com/meshplus/bitxhub-kit v1.0.1-0.20200729105047-4407a5e4e168
+	github.com/meshplus/bitxhub-core v0.1.0-rc1.0.20200903124405-b2c62dd8db89
+	github.com/meshplus/bitxhub-kit v1.0.1-0.20200903112208-fb288271c55c
 	github.com/meshplus/bitxhub-model v1.0.0-rc4.0.20200731025300-2bb1717059e0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/multiformats/go-multiaddr v0.2.0
@@ -35,8 +36,9 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.6.1
 	github.com/stretchr/objx v0.2.0 // indirect
-	github.com/stretchr/testify v1.4.0
+	github.com/stretchr/testify v1.6.0
 	github.com/syndtr/goleveldb v1.0.1-0.20190923125748-758128399b1d
+	github.com/tebeka/strftime v0.1.5 // indirect
 	github.com/tidwall/gjson v1.3.5
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20190109142713-0ad062ec5ee5
 	github.com/urfave/cli v1.22.1

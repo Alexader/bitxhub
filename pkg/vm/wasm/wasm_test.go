@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
@@ -16,10 +17,8 @@ import (
 	"github.com/meshplus/bitxhub-model/pb"
 	"github.com/meshplus/bitxhub/internal/ledger"
 	"github.com/meshplus/bitxhub/pkg/storage/leveldb"
-	"github.com/meshplus/bitxhub/pkg/vm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wasmerio/go-ext-wasm/wasmer"
 )
 
 const cert1 = `-----BEGIN CERTIFICATE-----
@@ -37,7 +36,7 @@ BAMCA0cAMEQCIFuh8p+nbtjQEZEFg03BN58//9VRsukQXj0xP1eHnrD4AiBwI1jq
 L6FMy96mi64g37R0i/I+T4MC5p2mzZIHvRJ8Rg==
 -----END CERTIFICATE-----`
 
-func initCreateContext(t *testing.T, name string) *vm.Context {
+func initCreateContext(t *testing.T, name string) *Context {
 	privKey, err := asym.GenerateKey(asym.ECDSASecp256r1)
 	assert.Nil(t, err)
 	dir := filepath.Join(os.TempDir(), "wasm", name)
@@ -61,14 +60,14 @@ func initCreateContext(t *testing.T, name string) *vm.Context {
 	ldg, err := ledger.New(store, ldb, ledger.NewAccountCache(), log.NewWithModule("executor"))
 	assert.Nil(t, err)
 
-	return &vm.Context{
+	return &Context{
 		Caller:          caller,
 		TransactionData: data,
 		Ledger:          ldg,
 	}
 }
 
-func initValidationContext(t *testing.T, name string) *vm.Context {
+func initValidationContext(t *testing.T, name string) *Context {
 	dir := filepath.Join(os.TempDir(), "validation", name)
 
 	bytes, err := ioutil.ReadFile("./testdata/validation_test.wasm")
@@ -91,14 +90,14 @@ func initValidationContext(t *testing.T, name string) *vm.Context {
 	ldg, err := ledger.New(store, ldb, ledger.NewAccountCache(), log.NewWithModule("executor"))
 	require.Nil(t, err)
 
-	return &vm.Context{
+	return &Context{
 		Caller:          caller,
 		TransactionData: data,
 		Ledger:          ldg,
 	}
 }
 
-func initFabricContext(t *testing.T, name string) *vm.Context {
+func initFabricContext(t *testing.T, name string) *Context {
 	dir := filepath.Join(os.TempDir(), "fabric_policy", name)
 
 	bytes, err := ioutil.ReadFile("./testdata/fabric_policy.wasm")
@@ -121,7 +120,7 @@ func initFabricContext(t *testing.T, name string) *vm.Context {
 	ldg, err := ledger.New(store, ldb, ledger.NewAccountCache(), log.NewWithModule("executor"))
 	require.Nil(t, err)
 
-	return &vm.Context{
+	return &Context{
 		Caller:          caller,
 		TransactionData: data,
 		Ledger:          ldg,
@@ -130,7 +129,7 @@ func initFabricContext(t *testing.T, name string) *vm.Context {
 
 func TestDeploy(t *testing.T) {
 	ctx := initCreateContext(t, "create")
-	instances := make(map[string]wasmer.Instance)
+	instances := &sync.Map{}
 	imports, err := EmptyImports()
 	require.Nil(t, err)
 	wasm, err := New(ctx, imports, instances)
@@ -142,7 +141,7 @@ func TestDeploy(t *testing.T) {
 
 func TestExecute(t *testing.T) {
 	ctx := initCreateContext(t, "execute")
-	instances := make(map[string]wasmer.Instance)
+	instances := &sync.Map{}
 	imports, err := EmptyImports()
 	require.Nil(t, err)
 	wasm, err := New(ctx, imports, instances)
@@ -163,7 +162,7 @@ func TestExecute(t *testing.T) {
 	data := &pb.TransactionData{
 		Payload: payload,
 	}
-	ctx1 := &vm.Context{
+	ctx1 := &Context{
 		Caller:          ctx.Caller,
 		Callee:          types.Bytes2Address(ret),
 		TransactionData: data,
@@ -181,7 +180,7 @@ func TestExecute(t *testing.T) {
 
 func TestWasm_RunFabValidation(t *testing.T) {
 	ctx := initFabricContext(t, "execute")
-	instances := make(map[string]wasmer.Instance)
+	instances := &sync.Map{}
 	imports, err := EmptyImports()
 	require.Nil(t, err)
 	wasm, err := New(ctx, imports, instances)
@@ -211,7 +210,7 @@ func TestWasm_RunFabValidation(t *testing.T) {
 	data := &pb.TransactionData{
 		Payload: payload,
 	}
-	ctx1 := &vm.Context{
+	ctx1 := &Context{
 		Caller:          ctx.Caller,
 		Callee:          types.Bytes2Address(ret),
 		TransactionData: data,
@@ -249,12 +248,12 @@ func BenchmarkRunFabValidation(b *testing.B) {
 
 	ldg, err := ledger.New(store, ldb, ledger.NewAccountCache(), log.NewWithModule("executor"))
 	require.Nil(b, err)
-	ctx := &vm.Context{
+	ctx := &Context{
 		Caller:          caller,
 		TransactionData: data,
 		Ledger:          ldg,
 	}
-	instances := make(map[string]wasmer.Instance)
+	instances := &sync.Map{}
 	imports, err := EmptyImports()
 	require.Nil(b, err)
 	wasm, err := New(ctx, imports, instances)
@@ -276,7 +275,7 @@ func BenchmarkRunFabValidation(b *testing.B) {
 	}
 	payload, err := invokePayload.Marshal()
 	require.Nil(b, err)
-	ctx1 := &vm.Context{
+	ctx1 := &Context{
 		Caller:          ctx.Caller,
 		Callee:          types.Bytes2Address(ret),
 		TransactionData: data,
@@ -298,7 +297,7 @@ func BenchmarkRunFabValidation(b *testing.B) {
 
 func TestWasm_RunValidation(t *testing.T) {
 	ctx := initValidationContext(t, "execute")
-	instances := make(map[string]wasmer.Instance)
+	instances := &sync.Map{}
 	imports, err := EmptyImports()
 	require.Nil(t, err)
 	wasm, err := New(ctx, imports, instances)
@@ -321,7 +320,7 @@ func TestWasm_RunValidation(t *testing.T) {
 	data := &pb.TransactionData{
 		Payload: payload,
 	}
-	ctx1 := &vm.Context{
+	ctx1 := &Context{
 		Caller:          ctx.Caller,
 		Callee:          types.Bytes2Address(ret),
 		TransactionData: data,
@@ -339,7 +338,7 @@ func TestWasm_RunValidation(t *testing.T) {
 
 func TestWasm_RunWithoutMethod(t *testing.T) {
 	ctx := initCreateContext(t, "execute_without_method")
-	instances := make(map[string]wasmer.Instance)
+	instances := &sync.Map{}
 	imports, err := EmptyImports()
 	require.Nil(t, err)
 	wasm, err := New(ctx, imports, instances)
@@ -360,7 +359,7 @@ func TestWasm_RunWithoutMethod(t *testing.T) {
 	data := &pb.TransactionData{
 		Payload: payload,
 	}
-	ctx1 := &vm.Context{
+	ctx1 := &Context{
 		Caller:          ctx.Caller,
 		Callee:          types.Bytes2Address(ret),
 		TransactionData: data,

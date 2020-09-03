@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/meshplus/bitxhub/internal/executor/contracts"
@@ -17,7 +18,6 @@ import (
 	"github.com/meshplus/bitxhub/internal/model/events"
 	"github.com/meshplus/bitxhub/pkg/vm/boltvm"
 	"github.com/sirupsen/logrus"
-	"github.com/wasmerio/go-ext-wasm/wasmer"
 )
 
 const (
@@ -40,7 +40,7 @@ type BlockExecutor struct {
 	currentHeight     uint64
 	currentBlockHash  types.Hash
 	boltContracts     map[string]boltvm.Contract
-	wasmInstances     map[string]wasmer.Instance
+	wasmInstances     *sync.Map
 
 	blockFeed event.Feed
 
@@ -55,7 +55,8 @@ func New(chainLedger ledger.Ledger, logger logrus.FieldLogger) (*BlockExecutor, 
 		return nil, fmt.Errorf("create cache: %w", err)
 	}
 
-	ve := validator.NewValidationEngine(chainLedger, logger)
+	instances := &sync.Map{}
+	ve := validator.NewValidationEngine(chainLedger, instances, logger)
 
 	boltContracts := registerBoltContracts()
 
@@ -74,7 +75,7 @@ func New(chainLedger ledger.Ledger, logger logrus.FieldLogger) (*BlockExecutor, 
 		currentHeight:     chainLedger.GetChainMeta().Height,
 		currentBlockHash:  chainLedger.GetChainMeta().BlockHash,
 		boltContracts:     boltContracts,
-		wasmInstances:     make(map[string]wasmer.Instance),
+		wasmInstances:     instances,
 	}, nil
 }
 
