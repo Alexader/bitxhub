@@ -4,6 +4,7 @@ go 1.14
 
 require (
 	github.com/Rican7/retry v0.1.0
+	github.com/bitxhub/bitxid v0.2.1-0.20210202065509-f41026693054
 	github.com/cbergoon/merkletree v0.2.0
 	github.com/cheynewallace/tabby v1.1.1
 	github.com/common-nighthawk/go-figure v0.0.0-20190529165535-67e0ed34491a
@@ -30,9 +31,9 @@ require (
 	github.com/libp2p/go-libp2p-core v0.5.6
 	github.com/looplab/fsm v0.2.0
 	github.com/magiconair/properties v1.8.4
-	github.com/meshplus/bitxhub-core v1.3.1-0.20211101024037-3b889796b1dc
-	github.com/meshplus/bitxhub-kit v1.2.1-0.20210901014031-ee93dd4f4ced
-	github.com/meshplus/bitxhub-model v1.2.1-0.20211013025747-b1d8b99f2d1e
+	github.com/meshplus/bitxhub-core v1.3.1-0.20211123064726-480302130b95
+	github.com/meshplus/bitxhub-kit v1.2.1-0.20210902085548-07f4fa85bfc9
+	github.com/meshplus/bitxhub-model v1.2.1-0.20211123070317-3b13985e1d7f
 	github.com/meshplus/eth-kit v0.0.0-20210906064541-8dfea98dbf95
 	github.com/meshplus/go-libp2p-cert v0.0.0-20210125114242-7d9ed2eaaccd
 	github.com/meshplus/go-lightp2p v0.0.0-20210617153734-471d08b829f8

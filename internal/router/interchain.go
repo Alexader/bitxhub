@@ -112,6 +112,7 @@ func (router *InterchainRouter) PutBlockAndMeta(block *pb.Block, meta *pb.Interc
 			w.Send(&pb.InterchainTxWrappers{
 				InterchainTxWrappers: wrappers,
 			})
+			router.logger.Infof("interchainTxWrappers: %v", wrappers)
 			return true
 		}
 
@@ -124,6 +125,7 @@ func (router *InterchainRouter) PutBlockAndMeta(block *pb.Block, meta *pb.Interc
 		w.Send(&pb.InterchainTxWrappers{
 			InterchainTxWrappers: wrappers,
 		})
+		router.logger.Infof("interchainTxWrappers: %v", wrappers)
 
 		return true
 	})

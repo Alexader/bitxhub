@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/bitxhub/bitxid"
+	"github.com/meshplus/bitxhub-core/agency"
 	appchainMgr "github.com/meshplus/bitxhub-core/appchain-mgr"
 	"github.com/meshplus/bitxhub-core/governance"
 	ruleMgr "github.com/meshplus/bitxhub-core/rule-mgr"
@@ -157,7 +159,7 @@ func (pl *VerifyPool) verifyProof(ibtp *pb.IBTP, proof []byte) (bool, uint64, er
 
 	// get real appchain id for union ibtp
 	if err := ibtp.CheckServiceID(); err != nil {
-		return false, 0, fmt.Errorf("check serviceID failed: %w", err)
+		return false, 0, fmt.Errorf("check service ID failed: %w", err)
 	}
 
 	var (
@@ -166,9 +168,39 @@ func (pl *VerifyPool) verifyProof(ibtp *pb.IBTP, proof []byte) (bool, uint64, er
 	)
 
 	if ibtp.Category() == pb.IBTP_REQUEST {
+		var err error
 		bxhID, chainID, _ = ibtp.ParseFrom()
+		srcAddr, _, err := ibtp.GetAddr()
+		if err != nil {
+			return false, 0, fmt.Errorf("get addr from method doc failed: %w", err)
+		}
+		if srcAddr != nil {
+			if err := pl.checkMethodDoc(ibtp.Extra); err != nil {
+				return false, 0, err
+			}
+			bxhID = pl.bitxhubID
+			chainID, err = pl.getChainID(srcAddr)
+			if err != nil {
+				return false, 0, fmt.Errorf("get src chain ID failed: %w", err)
+			}
+		}
 	} else {
+		var err error
 		bxhID, chainID, _ = ibtp.ParseTo()
+		_, dstAddr, err := ibtp.GetAddr()
+		if err != nil {
+			return false, 0, fmt.Errorf("get addr from method doc failed: %w", err)
+		}
+		if dstAddr != nil {
+			if err := pl.checkMethodDoc(ibtp.Extra); err != nil {
+				return false, 0, err
+			}
+			bxhID = pl.bitxhubID
+			chainID, err = pl.getChainID(dstAddr)
+			if err != nil {
+				return false, 0, fmt.Errorf("get dst chain ID failed: %w", err)
+			}
+		}
 	}
 
 	if bxhID != pl.bitxhubID {
@@ -194,6 +226,65 @@ func (pl *VerifyPool) verifyProof(ibtp *pb.IBTP, proof []byte) (bool, uint64, er
 		return false, gasUsed, fmt.Errorf("%s: %w", ProofError, err)
 	}
 	return ok, gasUsed, nil
+}
+
+func (pl *VerifyPool) getChainID(addr *types.Address) (string, error) {
+	ok, data := pl.getAccountState(constant.AppchainMgrContractAddr, appchainMgr.AppchainOccupyAdminKey(addr.Address))
+	if !ok {
+		return "", fmt.Errorf("chain ID not exist")
+	}
+	return string(data), nil
+}
+
+func (pl *VerifyPool) checkMethodDoc(proof []byte) error {
+	var docs []*bitxid.MethodDoc
+	if err := json.Unmarshal(proof, &docs); err != nil {
+		return fmt.Errorf("unmarshal method docs error: %w", err)
+	}
+	ok, ret := pl.ledger.Copy().GetState(constant.MethodRegistryContractAddr.Address(), []byte("MethodRegistry"))
+	if !ok {
+		return fmt.Errorf("get method registry failed")
+	}
+	f, err := agency.GetUnmarshalFunc("registry")
+	if err != nil {
+		return fmt.Errorf("get unmarshal func failed: %w", err)
+	}
+	res, err := f(ret)
+	if err != nil {
+		return fmt.Errorf("unmarshal method registry error: %w", err)
+	}
+
+	registry := res.(*bitxid.MethodRegistry)
+
+	// check src method doc
+	if err := pl.checkDocHash(docs[0], registry); err != nil {
+		return fmt.Errorf("check src doc hash failed: %w", err)
+	}
+
+	// check dst method doc
+	if err := pl.checkDocHash(docs[1], registry); err != nil {
+		return fmt.Errorf("check dst doc hash failed: %w", err)
+	}
+
+	return nil
+}
+
+func (pl *VerifyPool) checkDocHash(doc *bitxid.MethodDoc, registry *bitxid.MethodRegistry) error {
+	docBytes, err := doc.Marshal()
+	if err != nil {
+		return fmt.Errorf("marshal method doc error: %w", err)
+	}
+	docHash32 := sha256.Sum256(docBytes)
+	docHash := docHash32[:]
+	item, _, _, err := registry.Resolve(doc.ID)
+	if err != nil {
+		return fmt.Errorf("get doc hash from registry failed: %w", err)
+	}
+	getHash := item.DocHash
+	if !bytes.Equal(docHash, getHash) {
+		return fmt.Errorf("method doc hash is not correct")
+	}
+	return nil
 }
 
 func (pl *VerifyPool) getValidateAddress(chainID string) (string, error) {

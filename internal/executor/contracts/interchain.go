@@ -212,12 +212,15 @@ func (x *InterchainManager) HandleIBTP(ibtp *pb.IBTP) *boltvm.Response {
 func (x *InterchainManager) checkIBTP(ibtp *pb.IBTP) (*pb.Interchain, *boltvm.BxhError, *boltvm.BxhError) {
 	var targetError *boltvm.BxhError
 
-	srcChainService, err := x.parseChainService(ibtp.From)
+	// checked when verify the proof
+	srcAddr, dstAddr, _ := ibtp.GetAddr()
+
+	srcChainService, err := x.parseChainService(ibtp.From, srcAddr)
 	if err != nil {
 		return nil, nil, boltvm.BError(boltvm.InterchainInvalidIBTPParseSourceErrorCode, fmt.Sprintf(string(boltvm.InterchainInvalidIBTPParseSourceErrorMsg), err.Error()))
 	}
 
-	dstChainService, err := x.parseChainService(ibtp.To)
+	dstChainService, err := x.parseChainService(ibtp.To, dstAddr)
 	if err != nil {
 		return nil, nil, boltvm.BError(boltvm.InterchainInvalidIBTPParseDestErrorCode, fmt.Sprintf(string(boltvm.InterchainInvalidIBTPParseDestErrorMsg), err.Error()))
 	}
@@ -320,8 +323,9 @@ func (x *InterchainManager) getAppchainInfo(chainID string) (*appchainMgr.Appcha
 }
 
 func (x *InterchainManager) ProcessIBTP(ibtp *pb.IBTP, interchain *pb.Interchain) []byte {
-	srcChainService, _ := x.parseChainService(ibtp.From)
-	dstChainService, _ := x.parseChainService(ibtp.To)
+	srcAddr, dstAddr, _ := ibtp.GetAddr()
+	srcChainService, _ := x.parseChainService(ibtp.From, srcAddr)
+	dstChainService, _ := x.parseChainService(ibtp.To, dstAddr)
 
 	if pb.IBTP_REQUEST == ibtp.Category() {
 		if interchain.InterchainCounter == nil {
@@ -383,8 +387,9 @@ func (x *InterchainManager) updateInterchainMeta(ibtp *pb.IBTP) {
 
 func (x *InterchainManager) notifySrcDst(ibtp *pb.IBTP, statusChange *StatusChange) {
 	m := make(map[string]uint64)
-	srcChainService, _ := x.parseChainService(ibtp.From)
-	dstChainService, _ := x.parseChainService(ibtp.To)
+	srcAddr, dstAddr, _ := ibtp.GetAddr()
+	srcChainService, _ := x.parseChainService(ibtp.From, srcAddr)
+	dstChainService, _ := x.parseChainService(ibtp.To, dstAddr)
 
 	notifySrc, notifyDst := statusChange.NotifyFlags()
 	if notifySrc {
@@ -514,18 +519,36 @@ func IndexReceiptMapKey(id string) string {
 	return fmt.Sprintf("index-receipt-tx-%s", id)
 }
 
-func (x *InterchainManager) parseChainService(id string) (*ChainService, error) {
+func (x *InterchainManager) parseChainService(id string, addr *types.Address) (*ChainService, error) {
 	splits := strings.Split(id, ":")
 
 	size := len(splits)
 
-	if size != 2 && size != 3 {
-		return nil, fmt.Errorf("invalid chain service id %s", id)
-	}
-
 	bxhId, err := x.getBitXHubID()
 	if err != nil {
 		return nil, err
+	}
+
+	if splits[0] == "did" {
+		if size != 4 || splits[1] == "" || splits[2] == "" || splits[3] == "" {
+			return nil, fmt.Errorf("invalid chain service id %s", id)
+		}
+		var chainID string
+		resp := x.CrossInvoke(constant.AppchainMgrContractAddr.String(), "GetChainIdByAdminAddr", pb.String(addr.Address))
+		if !resp.Ok {
+			return nil, fmt.Errorf("get chain ID failed: %s", string(resp.Result))
+		}
+		chainID = string(resp.Result)
+		return &ChainService{
+			BxhId:     bxhId,
+			ChainId:   chainID,
+			ServiceId: splits[3],
+			IsLocal:   true,
+		}, nil
+	}
+
+	if size != 2 && size != 3 {
+		return nil, fmt.Errorf("invalid chain service id %s", id)
 	}
 
 	if len(splits) == 2 {
@@ -723,6 +746,10 @@ func (x *InterchainManager) checkTxStatusForTargetBxh(ibtp *pb.IBTP) (bool, erro
 	curBxhID, err := x.getBitXHubID()
 	if err != nil {
 		return false, err
+	}
+
+	if isDID, _ := ibtp.IsDID(); isDID {
+		targetBxhID = curBxhID
 	}
 
 	if targetBxhID == curBxhID {

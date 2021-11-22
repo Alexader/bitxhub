@@ -857,6 +857,18 @@ func (am *AppchainManager) getChainIdByAdminAddr(adminAddr string) (string, erro
 	return chainId, nil
 }
 
+func (am *AppchainManager) GetChainIdByAdminAddr(adminAddr string) *boltvm.Response {
+	chainId, err := am.getChainIdByAdminAddr(adminAddr)
+	if err != nil {
+		return boltvm.Error(boltvm.AppchainNonexistentChainCode, fmt.Sprintf(string(boltvm.AppchainNonexistentChainMsg), adminAddr, err.Error()))
+	}
+	if data, err := json.Marshal(chainId); err != nil {
+		return boltvm.Error(boltvm.AppchainInternalErrCode, fmt.Sprintf(string(boltvm.AppchainInternalErrMsg), err.Error()))
+	} else {
+		return boltvm.Success(data)
+	}
+}
+
 func (am *AppchainManager) getAdminAddrByChainId(chainId string) []string {
 	am.AppchainManager.Persister = am.Stub
 
