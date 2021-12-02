@@ -9,7 +9,6 @@ import (
 	"github.com/meshplus/bitxhub-core/boltvm"
 	"github.com/meshplus/bitxhub-core/governance"
 	servicemgr "github.com/meshplus/bitxhub-core/service-mgr"
-	"github.com/meshplus/bitxhub-kit/types"
 	"github.com/meshplus/bitxhub-model/constant"
 	"github.com/meshplus/bitxhub-model/pb"
 	"github.com/sirupsen/logrus"
@@ -900,10 +899,10 @@ func (sm *ServiceManager) checkServiceInfo(service *servicemgr.Service, isRegist
 	}
 
 	// check id
-	_, err := types.HexDecodeString(service.ServiceID)
+	/*_, err := types.HexDecodeString(service.ServiceID)
 	if err != nil {
 		return boltvm.Error(boltvm.ServiceIllegalServiceIDCode, fmt.Sprintf(string(boltvm.ServiceIllegalServiceIDMsg), service.ServiceID, err.Error()))
-	}
+	}*/
 
 	// check type
 	if service.Type != servicemgr.ServiceCallContract &&
