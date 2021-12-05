@@ -1,9 +1,10 @@
 package executor
 
 import (
+	"sync"
+
 	"github.com/meshplus/bitxhub-core/agency"
 	"go.uber.org/atomic"
-	"sync"
 )
 
 // this will analyse the dependency of txs, and construct a DAG
@@ -27,10 +28,11 @@ func (pe *ParallelExecutor) runWithDAG(inter []*IndexedTx, cont map[string]agenc
 
 func (pe *ParallelExecutor) genDAG(txs []*IndexedTx) *DAG {
 	res := NewDAG()
-	existResources := make(map[string]*Vertex)
+	existResources := make(map[uint64]*Vertex)
 	for _, tx := range txs {
-		newVertex := NewVertex(tx.GetTx().Hash().String(), tx)
-		resources := tx.GetTx().GetIBTP().Group.GetKeys()
+		id := tx.GetTx().Hash().String()
+		newVertex := NewVertex(id, tx)
+		resources := tx.GetTx().GetIBTP().Group.GetVals()
 		for i := 0; i < len(resources); i++ {
 			if forward, ok := existResources[resources[i]]; ok {
 				// 添加到所有之前使用该资源的节点的一条有向边
@@ -38,6 +40,7 @@ func (pe *ParallelExecutor) genDAG(txs []*IndexedTx) *DAG {
 			}
 			existResources[resources[i]] = newVertex
 		}
+		res.vertices[id] = newVertex
 	}
 	return res
 }

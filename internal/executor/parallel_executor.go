@@ -10,7 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var runOnDAG = false
+var runOnDAG = true
 
 type ParallelExecutor struct {
 	normalTxs         []*types.Hash

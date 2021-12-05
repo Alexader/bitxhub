@@ -21,7 +21,7 @@ solo = false
     allowed_origins = ["*"]
 
 [ping]
-  enable = true
+  enable = false
   duration = "15s"
 
 [security]
@@ -31,8 +31,8 @@ solo = false
 
 [limiter]
   interval= "50ms"
-  quantum= 500
-  capacity= 10000
+  quantum= 5000
+  capacity= 100000
 
 [log]
   level = "info"
@@ -58,7 +58,7 @@ solo = false
   plugin = "plugins/raft.so"
 
 [executor]
-  type = "serial"  # opensource version only supports serial type, commercial version supports serial and parallel types
+  type = "parallel"  # opensource version only supports serial type, commercial version supports serial and parallel types
 
 [license]
   key = "133847740289a8dc5447bfbaedf10ed5ee9460110e4ba6b455e33cf941253527f18dd721515c5142fcea9b6415ddad6b3f1696011a4bbc86f35833ae9296a3ea"
