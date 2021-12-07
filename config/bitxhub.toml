@@ -1,6 +1,7 @@
 title = "BitXHub configuration file"
 
 solo = false
+ulimit = 4096
 
 [port]
   grpc = 60011

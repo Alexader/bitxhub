@@ -180,7 +180,7 @@ func GenerateBitXHubWithoutOrder(rep *repo.Repo) (*BitXHub, error) {
 
 func (bxh *BitXHub) Start() error {
 
-	if err := bxh.raiseUlimit(2048); err != nil {
+	if err := bxh.raiseUlimit(20480); err != nil {
 		return fmt.Errorf("raise ulimit: %w", err)
 	}
 

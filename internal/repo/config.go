@@ -38,6 +38,7 @@ type Config struct {
 	RepoRoot string `json:"repo_root"`
 	Title    string `json:"title"`
 	Solo     bool   `json:"solo"`
+	Ulimit   uint64 `toml:"ulimit" json:"ulimit"`
 	Port     `json:"port"`
 	PProf    `json:"pprof"`
 	Monitor  `json:"monitor"`
@@ -159,8 +160,9 @@ func (c *Config) Bytes() ([]byte, error) {
 
 func DefaultConfig() (*Config, error) {
 	return &Config{
-		Title: "BitXHub configuration file",
-		Solo:  false,
+		Title:  "BitXHub configuration file",
+		Solo:   false,
+		Ulimit: 4096,
 		Port: Port{
 			Grpc:    60011,
 			Gateway: 9091,
@@ -202,7 +204,7 @@ func DefaultConfig() (*Config, error) {
 	}, nil
 }
 
-func UnmarshalConfig(viper *viper.Viper, repoRoot string,  configPath string) (*Config, error) {
+func UnmarshalConfig(viper *viper.Viper, repoRoot string, configPath string) (*Config, error) {
 	if len(configPath) == 0 {
 		viper.SetConfigFile(filepath.Join(repoRoot, configName))
 	} else {
