@@ -2,6 +2,7 @@ package executor
 
 import (
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/meshplus/bitxhub-core/agency"
@@ -10,7 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var runOnDAG = true
+var runOnDAG = false
 
 type ParallelExecutor struct {
 	normalTxs         []*types.Hash
@@ -83,7 +84,7 @@ func (pe *ParallelExecutor) GetInterchainCounter() map[string][]*pb.VerifiedInde
 }
 
 func (pe *ParallelExecutor) executeGroup(group interface{}) {
-	//pe.logger.Infof("group type is %v", reflect.TypeOf(group))
+	pe.logger.Infof("group type is %v", reflect.TypeOf(group))
 	switch group.(type) {
 	case *GroupNormal:
 		normal := group.(*GroupNormal)
@@ -108,6 +109,7 @@ func (pe *ParallelExecutor) executeGroup(group interface{}) {
 				cont := pe.boltContractPool.Get().(map[string]agency.Contract)
 
 				if runOnDAG {
+					pe.logger.Infof("parallel executor interchain groups")
 					pe.runWithDAG(inter, cont)
 				} else {
 					for _, vmTx := range inter {

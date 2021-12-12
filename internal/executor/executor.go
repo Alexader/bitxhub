@@ -15,6 +15,7 @@ import (
 	"github.com/meshplus/bitxhub/internal/executor/contracts"
 	"github.com/meshplus/bitxhub/internal/ledger"
 	"github.com/meshplus/bitxhub/internal/model/events"
+	"github.com/meshplus/bitxhub/internal/repo"
 	"github.com/meshplus/bitxhub/pkg/proof"
 	"github.com/meshplus/bitxhub/pkg/vm/boltvm"
 	"github.com/sirupsen/logrus"
@@ -47,16 +48,17 @@ type BlockExecutor struct {
 }
 
 // New creates executor instance
-func New(chainLedger ledger.Ledger, logger logrus.FieldLogger, typ string) (*BlockExecutor, error) {
+func New(chainLedger ledger.Ledger, logger logrus.FieldLogger, conf *repo.Executor) (*BlockExecutor, error) {
 	ibtpVerify := proof.New(chainLedger, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	txsExecutor, err := agency.GetExecutorConstructor(typ)
+	txsExecutor, err := agency.GetExecutorConstructor(conf.Type)
 	if err != nil {
 		return nil, err
 	}
 
+	runOnDAG = conf.DAG
 	blockExecutor := &BlockExecutor{
 		ledger:           chainLedger,
 		logger:           logger,

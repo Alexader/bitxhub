@@ -147,6 +147,7 @@ type Order struct {
 
 type Executor struct {
 	Type string `toml:"type" json:"type"`
+	DAG  bool   `toml:"dag" json:"dag"`
 }
 
 func (c *Config) Bytes() ([]byte, error) {
@@ -200,6 +201,7 @@ func DefaultConfig() (*Config, error) {
 		},
 		Executor: Executor{
 			Type: "serial",
+			DAG:  false,
 		},
 	}, nil
 }
