@@ -231,13 +231,13 @@ func (x *InterchainManager) checkIBTP(ibtp *pb.IBTP) (*pb.Interchain, error) {
 			}
 		}
 
-		idx := interchain.InterchainCounter[ibtp.To]
-		if ibtp.Index <= idx {
-			return nil, fmt.Errorf(fmt.Sprintf("%s, required %d, but %d", ibtpIndexExist, idx+1, ibtp.Index))
-		}
-		if ibtp.Index > idx+1 {
-			return nil, fmt.Errorf(fmt.Sprintf("%s, required %d, but %d", ibtpIndexWrong, idx+1, ibtp.Index))
-		}
+		// idx := interchain.InterchainCounter[ibtp.To]
+		// if ibtp.Index <= idx {
+		// 	return nil, fmt.Errorf(fmt.Sprintf("%s, required %d, but %d", ibtpIndexExist, idx+1, ibtp.Index))
+		// }
+		// if ibtp.Index > idx+1 {
+		// 	return nil, fmt.Errorf(fmt.Sprintf("%s, required %d, but %d", ibtpIndexWrong, idx+1, ibtp.Index))
+		// }
 	} else {
 		srcAppchain, err = x.getAppchainInfo(ibtp.From)
 		if err != nil {
@@ -255,14 +255,14 @@ func (x *InterchainManager) checkIBTP(ibtp *pb.IBTP) (*pb.Interchain, error) {
 			}
 		}
 
-		idx := interchain.ReceiptCounter[ibtp.To]
-		if ibtp.Index <= idx {
-			return nil, fmt.Errorf(fmt.Sprintf("%s: required %d, but %d", ibtpIndexExist, idx+1, ibtp.Index))
-		}
+		// idx := interchain.ReceiptCounter[ibtp.To]
+		// if ibtp.Index <= idx {
+		// 	return nil, fmt.Errorf(fmt.Sprintf("%s: required %d, but %d", ibtpIndexExist, idx+1, ibtp.Index))
+		// }
 
-		if ibtp.Index > idx+1 {
-			return nil, fmt.Errorf(fmt.Sprintf("%s: required %d, but %d", ibtpIndexWrong, idx+1, ibtp.Index))
-		}
+		// if ibtp.Index > idx+1 {
+		// 	return nil, fmt.Errorf(fmt.Sprintf("%s: required %d, but %d", ibtpIndexWrong, idx+1, ibtp.Index))
+		// }
 	}
 
 	return interchain, nil
@@ -479,10 +479,10 @@ func (x *InterchainManager) checkUnionIBTP(app *appchainMgr.Appchain, ibtp *pb.I
 		pb.IBTP_ASSET_EXCHANGE_REDEEM == ibtp.Type ||
 		pb.IBTP_ASSET_EXCHANGE_REFUND == ibtp.Type {
 
-		idx := interchain.InterchainCounter[ibtp.To]
-		if idx+1 != ibtp.Index {
-			return fmt.Errorf(fmt.Sprintf("wrong index, required %d, but %d", idx+1, ibtp.Index))
-		}
+		// idx := interchain.InterchainCounter[ibtp.To]
+		// if idx+1 != ibtp.Index {
+		// 	return fmt.Errorf(fmt.Sprintf("wrong index, required %d, but %d", idx+1, ibtp.Index))
+		// }
 	} else {
 		idx := interchain.ReceiptCounter[ibtp.To]
 		if idx+1 != ibtp.Index {

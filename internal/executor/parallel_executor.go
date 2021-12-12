@@ -50,7 +50,7 @@ func (pe *ParallelExecutor) ApplyTransactions(txs []*pb.Transaction) []*pb.Recei
 	if err != nil {
 		panic(fmt.Sprintf("Group tx: %s", err.Error()))
 	}
-	//pe.logger.Infof("parallel executor splits txs to %d groups", len(groups))
+	pe.logger.Debugf("parallel executor splits txs to %d groups", len(groups))
 
 	for _, group := range groups {
 		pe.executeGroup(group)
@@ -109,7 +109,6 @@ func (pe *ParallelExecutor) executeGroup(group interface{}) {
 				cont := pe.boltContractPool.Get().(map[string]agency.Contract)
 
 				if runOnDAG {
-					pe.logger.Infof("parallel executor interchain groups")
 					pe.runWithDAG(inter, cont)
 				} else {
 					for _, vmTx := range inter {

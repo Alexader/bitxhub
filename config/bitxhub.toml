@@ -43,7 +43,7 @@ ulimit = 4096
   [log.module]
     p2p = "info"
     consensus = "info"
-    executor = "info"
+    executor = "debug"
     router = "info"
     api = "info"
     coreapi = "info"
@@ -60,7 +60,7 @@ ulimit = 4096
 
 [executor]
   type = "parallel"  # opensource version only supports serial type, commercial version supports serial and parallel types
-  dag = false
+  dag = true
 
 [license]
   key = "133847740289a8dc5447bfbaedf10ed5ee9460110e4ba6b455e33cf941253527f18dd721515c5142fcea9b6415ddad6b3f1696011a4bbc86f35833ae9296a3ea"

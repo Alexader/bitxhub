@@ -9,24 +9,12 @@ import (
 
 // this will analyse the dependency of txs, and construct a DAG
 func (pe *ParallelExecutor) runWithDAG(inter []*IndexedTx, cont map[string]agency.Contract) {
-	// set condition variable, current sequence and tx sequence in group into contract instance
-	//cont := pe.boltContractPool.Get().(map[string]agency.Contract)
-	//
-	//for _, vmTx := range inter {
-	//	index := vmTx.GetIndex()
-	//	receipt := pe.applyTxFunc(index, vmTx.GetTx(), invalidTxs[index], &agency.TxOpt{
-	//		Contracts: cont,
-	//	})
-	//	pe.receipts[index] = receipt
-	//}
-	//
-	//// free contract to pool
-	//pe.boltContractPool.Put(cont)
 	dag := pe.genDAG(inter)
 	pe.runOnDAG(dag, cont)
 }
 
 func (pe *ParallelExecutor) genDAG(txs []*IndexedTx) *DAG {
+	pe.logger.Debugf("total tx group len :%d", len(txs))
 	res := NewDAG()
 	existResources := make(map[uint64]*Vertex)
 	for _, tx := range txs {
@@ -46,12 +34,13 @@ func (pe *ParallelExecutor) genDAG(txs []*IndexedTx) *DAG {
 }
 
 func (pe *ParallelExecutor) runOnDAG(dag *DAG, cont map[string]agency.Contract) {
-	completed := &sync.Map{}
-	count := atomic.Int32{}
 	zeroDegreeNodesMap := dag.GetZeroDegreeVertices()
 	if len(zeroDegreeNodesMap) == 0 {
 		return
 	}
+	completed := &sync.Map{}
+	count := atomic.Int32{}
+	done := make(chan bool)
 	tasks := make(chan *Vertex, 10)
 	go func() {
 		for ver, _ := range zeroDegreeNodesMap {
@@ -77,13 +66,18 @@ func (pe *ParallelExecutor) runOnDAG(dag *DAG, cont map[string]agency.Contract) 
 			}
 		}
 		completed.Store(vertex.ID, void{})
-		count.Inc()
+		nowCount := count.Inc()
+		if nowCount == int32(len(dag.vertices)) {
+			done <- true
+		}
 	}
 
-	for count.Load() < int32(len(dag.vertices)) {
+	for {
 		select {
 		case ver := <-tasks:
 			go runTx(ver)
+		case <-done:
+			return
 		}
 	}
 }
